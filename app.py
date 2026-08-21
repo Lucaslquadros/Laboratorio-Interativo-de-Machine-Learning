@@ -48,6 +48,8 @@ from core import (
     prever_novo_valor,
     prever_novo_valor_multiplo,
     selecionar_melhor_subconjunto_multipla,
+    testar_homocedasticidade_residuos,
+    testar_independencia_residuos,
     testar_normalidade_residuos,
     treinar_modelo_regressao_logistica,
     treinar_modelo_regressao_multipla,
@@ -176,6 +178,19 @@ DATASETS = {
             "juntos), então a Múltipla ganha pouco da Simples neste caso "
             "-- ao contrário do dataset de Saúde acima, onde a Múltipla "
             "ganha bem mais. Compare os dois na aba **Comparação**."
+        ),
+    },
+    "📢 Publicidade x Vendas (aula)": {
+        "arquivo": "publicidade.csv",
+        "y_padrao": "Vendas",
+        "descricao": (
+            "Dataset usado no `exemplo_teste_suposicao.py`: vendas de um "
+            "produto em 200 mercados, explicadas pelo orçamento de "
+            "publicidade em TV, Rádio e Jornal. Bom para ver os **testes "
+            "de suposições** da aba Diagnóstico em ação -- 'Jornal' tem "
+            "correlação fraca com Vendas (R² ≈ 0.8649 com as 3 variáveis, "
+            "0.8657 com o melhor subconjunto TV+Rádio, test_size=0.3, "
+            "random_state=0)."
         ),
     },
 }
@@ -1164,6 +1179,28 @@ if tarefa == TAREFA_REGRESSAO:
         ax_resid.set_ylabel("Resíduo (real − previsto)")
         st.pyplot(fig_resid, use_container_width=False)
 
+        st.markdown("**Teste estatístico (Goldfeld-Quandt)**")
+        try:
+            estatistica_gq, p_valor_gq = testar_homocedasticidade_residuos(residuos, X_teste)
+            if p_valor_gq > 0.05:
+                st.success(
+                    f"p-valor = {p_valor_gq:.4f} (> 0.05) -- não há evidência para "
+                    "rejeitar a hipótese de que a variância dos resíduos é "
+                    "constante (homocedasticidade)."
+                )
+            else:
+                st.warning(
+                    f"p-valor = {p_valor_gq:.4f} (≤ 0.05) -- há evidência de "
+                    "**heterocedasticidade** (variância dos resíduos não é "
+                    "constante), o que pode afetar a confiabilidade dos "
+                    "testes estatísticos do modelo."
+                )
+            st.caption(f"Estatística F: {estatistica_gq:.4f}")
+        except DadosInvalidosError as erro:
+            st.info(str(erro))
+
+        ver_codigo(testar_homocedasticidade_residuos, "Ver o código: teste de Goldfeld-Quandt")
+
         st.subheader("Histograma dos resíduos")
         st.caption("Se o modelo é adequado, a forma deve lembrar um sino (distribuição normal).")
         fig_hist, ax_hist = plt.subplots(figsize=(8, 4))
@@ -1197,6 +1234,65 @@ if tarefa == TAREFA_REGRESSAO:
             st.info(str(erro))
 
         ver_codigo(testar_normalidade_residuos, "Ver o código: teste de Shapiro-Wilk")
+
+        st.markdown("---")
+        st.subheader("Independência dos resíduos (autocorrelação)")
+        st.caption(
+            "Os resíduos não deveriam ter padrão entre si -- se o valor de um "
+            "resíduo ajuda a prever o próximo, o modelo está deixando "
+            "informação na mesa. Dois testes diferentes, que podem discordar "
+            "entre si (cada um capta um tipo de padrão)."
+        )
+        try:
+            p_valor_lb, estatistica_dw = testar_independencia_residuos(residuos)
+            col_lb, col_dw = st.columns(2)
+            with col_lb:
+                st.markdown("**Ljung-Box**")
+                if p_valor_lb > 0.05:
+                    st.success(f"p-valor (mínimo entre os lags) = {p_valor_lb:.4f} (> 0.05) -- não rejeita H0 (sem autocorrelação).")
+                else:
+                    st.warning(f"p-valor (mínimo entre os lags) = {p_valor_lb:.4f} (≤ 0.05) -- rejeita H0 (indício de autocorrelação em algum lag).")
+            with col_dw:
+                st.markdown("**Durbin-Watson**")
+                st.metric("Estatística", f"{estatistica_dw:.4f}")
+                if estatistica_dw < 1.5:
+                    st.warning("< 1.5 -- indício de autocorrelação positiva.")
+                elif estatistica_dw > 2.5:
+                    st.warning("> 2.5 -- indício de autocorrelação negativa.")
+                else:
+                    st.success("Entre 1.5 e 2.5 -- sem evidência significativa de autocorrelação.")
+            st.info(
+                "Os dois testes podem discordar (Ljung-Box olha vários lags de "
+                "uma vez, Durbin-Watson foca só na autocorrelação entre "
+                "resíduos vizinhos) -- quando isso acontece, vale interpretar "
+                "com cautela em vez de confiar cegamente em um só teste."
+            )
+        except DadosInvalidosError as erro:
+            st.info(str(erro))
+
+        ver_codigo(testar_independencia_residuos, "Ver o código: testes de Ljung-Box e Durbin-Watson")
+
+        st.markdown("---")
+        st.subheader("Ausência de colinearidade entre as variáveis X")
+        if len(cols_x) < 2:
+            st.caption(
+                "Este modo usa 1 única variável X -- colinearidade só é um "
+                "risco quando há 2 ou mais variáveis independentes (modo "
+                "Múltipla)."
+            )
+        else:
+            st.caption(
+                "Em Regressão Múltipla, as variáveis X idealmente não deveriam "
+                "estar fortemente correlacionadas entre si -- caso contrário, "
+                "fica difícil separar o efeito de cada uma sobre o alvo. "
+                "Correlações próximas de 1 ou -1 fora da diagonal são o sinal "
+                "de alerta (veja também a aba **📊 Dados & Correlação**)."
+            )
+            fig_colin, ax_colin = plt.subplots(figsize=(6, 5))
+            sns.heatmap(
+                X_teste.corr(), annot=True, cmap="RdYlGn", square=True, ax=ax_colin, vmin=-1, vmax=1
+            )
+            st.pyplot(fig_colin, use_container_width=False)
 
 # ------------------------------------------------------------- Previsão ---
 with aba_previsao:

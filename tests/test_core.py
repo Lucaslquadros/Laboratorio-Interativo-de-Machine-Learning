@@ -563,3 +563,102 @@ def test_classificar_problema_rotulado_categorico_multiclasse_recomenda_classifi
     assert resultado["categoria"] == "Aprendizado Supervisionado -- Classificação"
     assert resultado["subtipo"] == "Multiclasse (3+ classes)"
     assert resultado["recomendacao_app"] == "Classificação"
+
+
+# ============================================================================
+# 10) Dataset `publicidade.csv` (ingestão de aulas/, v9)
+# ============================================================================
+
+def test_regressao_multipla_bate_com_r2_do_script_de_aula_publicidade():
+    """`aulas/exemplo_teste_suposicao.py` treina X=['TV', 'Radio', 'Jornal']
+    -> y='Vendas' com test_size=0.3, random_state=0. Confere que
+    `data/publicidade.csv` reproduz o R² calculado como referência
+    (0.8649) para essa mesma combinação de variáveis."""
+    df = core.carregar_dataset(os.path.join(DATA_DIR, "publicidade.csv"))
+    cols_x = ["TV", "Radio", "Jornal"]
+    col_y = "Vendas"
+
+    df_limpo, _ = core.validar_dados_para_regressao_multipla(df, cols_x, col_y, test_size=0.3)
+    X, y = df_limpo[cols_x], df_limpo[col_y]
+    X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
+    modelo, _, _ = core.treinar_modelo_regressao_multipla(X_tr, y_tr)
+    _, r2, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
+
+    assert r2 == pytest.approx(0.8649, abs=1e-3)
+
+
+def test_melhor_subconjunto_multipla_descarta_jornal_no_dataset_publicidade():
+    """'Jornal' tem correlação fraca com Vendas -- a busca de melhor
+    subconjunto deve preferir só TV+Radio (R²≈0.8657), batendo com a
+    conclusão do próprio script de aula ('Jornal' não tem forma
+    específica de relação com Vendas)."""
+    df = core.carregar_dataset(os.path.join(DATA_DIR, "publicidade.csv"))
+    candidatas = ["TV", "Radio", "Jornal"]
+    col_y = "Vendas"
+
+    cols_escolhidas, _, r2, _, _ = core.selecionar_melhor_subconjunto_multipla(
+        df, candidatas, col_y, test_size=0.3, random_state=0
+    )
+
+    assert set(cols_escolhidas) == {"TV", "Radio"}
+    assert r2 == pytest.approx(0.8657, abs=1e-3)
+
+
+# ============================================================================
+# 11) Suposições avançadas: Homocedasticidade e Independência dos Resíduos
+#     (v9 -- alinhamento com aulas/exemplo_teste_suposicao.py)
+# ============================================================================
+
+def test_testar_homocedasticidade_residuos_com_variancia_constante():
+    rng = np.random.default_rng(42)
+    residuos = rng.normal(loc=0, scale=1, size=100)
+    X_teste = pd.DataFrame({"x": rng.normal(size=100)})
+
+    estatistica, p_valor = core.testar_homocedasticidade_residuos(residuos, X_teste)
+
+    assert not np.isnan(estatistica)
+    assert 0.0 <= p_valor <= 1.0
+
+
+def test_testar_homocedasticidade_residuos_falha_com_poucos_pontos():
+    X_teste = pd.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(core.DadosInvalidosError):
+        core.testar_homocedasticidade_residuos([1.0, 2.0, 3.0], X_teste)
+
+
+def test_testar_independencia_residuos_com_amostra_aleatoria():
+    rng = np.random.default_rng(42)
+    residuos = rng.normal(loc=0, scale=1, size=100)
+
+    p_valor_ljungbox, estatistica_durbin_watson = core.testar_independencia_residuos(residuos)
+
+    assert 0.0 <= p_valor_ljungbox <= 1.0
+    # resíduos i.i.d. -> Durbin-Watson deve ficar perto de 2 (sem autocorrelação)
+    assert 1.5 < estatistica_durbin_watson < 2.5
+
+
+def test_testar_independencia_residuos_falha_com_poucos_pontos():
+    with pytest.raises(core.DadosInvalidosError):
+        core.testar_independencia_residuos([1.0, 2.0])
+
+
+def test_diagnostico_de_suposicoes_no_fluxo_completo_publicidade():
+    """Confere que os testes novos encaixam direto na saída de
+    avaliar_modelo/diagnosticar_residuos, como app.py usa, no dataset que
+    motivou esta rodada (publicidade.csv)."""
+    df = core.carregar_dataset(os.path.join(DATA_DIR, "publicidade.csv"))
+    cols_x = ["TV", "Radio", "Jornal"]
+    col_y = "Vendas"
+    df_limpo, _ = core.validar_dados_para_regressao_multipla(df, cols_x, col_y, test_size=0.3)
+    X, y = df_limpo[cols_x], df_limpo[col_y]
+    X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
+    modelo, _, _ = core.treinar_modelo_regressao_multipla(X_tr, y_tr)
+    predicoes, _, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
+    residuos = core.diagnosticar_residuos(y_te, predicoes)["residuos"]
+
+    estatistica_gq, p_valor_gq = core.testar_homocedasticidade_residuos(residuos, X_te)
+    assert 0.0 <= p_valor_gq <= 1.0
+
+    p_valor_lb, estatistica_dw = core.testar_independencia_residuos(residuos)
+    assert 0.0 <= p_valor_lb <= 1.0
+    assert 0.0 <= estatistica_dw <= 4.0

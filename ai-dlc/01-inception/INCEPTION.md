@@ -408,6 +408,86 @@ do Lucas e deixa o leaderboard coerente com o resto do app.
 **Decisão validada com o Lucas:** opção A (melhor subconjunto, busca
 exaustiva). Implementada no Bolt 36 (`BOLTS.md`).
 
+## Requisitos funcionais (v9 — Ingestão de `aulas/`: teste de suposições + dataset Publicidade)
+
+Motivo: o Lucas adicionou dois arquivos novos em `aulas/`:
+`exemplo_teste_suposicao.py` e `publicidade.csv`. Seguindo o processo
+registrado na v7, a checagem de alinhamento encontrou lacunas reais no
+tópico #4 do syllabus (Estudo de Adequação do Modelo), que hoje só está
+parcialmente coberto pela aba **🩺 Diagnóstico dos Resíduos**.
+
+### Leitura dos arquivos novos
+
+| Arquivo | O que é | Ação |
+|---|---|---|
+| `publicidade.csv` | Dataset clássico "Advertising" (TV/Rádio/Jornal → Vendas, 200 linhas, 4 colunas, sem NaN) | **Dataset novo**, não está em `data/` ainda — integrar |
+| `exemplo_teste_suposicao.py` | Script novo sobre as 6 suposições da regressão linear (linearidade, média dos resíduos, homocedasticidade, normalidade, independência, colinearidade), com testes estatísticos formais para cada uma | Confirma o que já existe (média dos resíduos, normalidade via Shapiro-Wilk) e expõe **3 lacunas** (ver abaixo) |
+
+### Gap analysis: suposições cobertas x faltantes na aba Diagnóstico
+
+| Suposição | Hoje no app | O que o script novo ensina a mais |
+|---|---|---|
+| Linearidade | Indireta (matriz de correlação em "Dados & Correlação") | Nada de novo — mesma ideia |
+| Média dos resíduos = 0 | ✅ `diagnosticar_residuos` | Nada de novo |
+| Homocedasticidade | Só visual (gráfico Resíduos vs. Previstos) | **Teste de Goldfeld-Quandt** (formal, com p-valor) |
+| Normalidade | ✅ Shapiro-Wilk | Nada de novo |
+| Independência dos resíduos | ❌ Não existe | **Teste de Ljung-Box e teste de Durbin-Watson** — no próprio script de aula os dois divergem no dataset de publicidade (Ljung-Box rejeita H0, Durbin-Watson não indica autocorrelação relevante), o que é pedagogicamente rico (mostra que testes diferentes captam coisas diferentes) |
+| Ausência de colinearidade | Indireta (matriz de correlação geral em "Dados & Correlação", não citada como suposição) | Nada de novo tecnicamente, mas o script trata como suposição própria — decisão: duplicar o heatmap (só das colunas X escolhidas) dentro da aba Diagnóstico |
+
+Nova dependência: `statsmodels` (usada pelo script para Goldfeld-Quandt,
+Ljung-Box e Durbin-Watson; já estava instalada no ambiente, mas ausente do
+`requirements.txt`).
+
+- [ ] Adicionar `statsmodels` a `requirements.txt`.
+- [ ] Integrar `publicidade.csv` a `data/` e ao seletor de datasets
+      (`DATASETS` em `app.py`), seguindo o padrão já usado para
+      `50_Startups.csv` (v7).
+- [ ] `core.py`: `testar_homocedasticidade_residuos()` (Goldfeld-Quandt) e
+      `testar_independencia_residuos()` (Ljung-Box + Durbin-Watson).
+- [ ] Aba **🩺 Diagnóstico dos Resíduos**: nova seção de Homocedasticidade
+      (teste formal, além do gráfico já existente), nova seção de
+      Independência dos Resíduos (os dois testes, com nota explicando a
+      divergência possível) e heatmap de colinearidade das variáveis X
+      escolhidas.
+- [ ] Atualizar `ai-dlc/aulas-log.md` com os 2 arquivos novos.
+
+### Decisões validadas com o Lucas (v9)
+
+- **Independência dos resíduos:** incluir os dois testes (Ljung-Box e
+  Durbin-Watson), com nota textual explicando que podem divergir — em vez
+  de escolher só um.
+- **Colinearidade:** duplicar o heatmap de correlação (das variáveis X
+  escolhidas) dentro da aba Diagnóstico, além do já existente em "Dados &
+  Correlação" — não é redundância "ruim" porque a aba Diagnóstico deve
+  reunir todas as suposições em um só lugar.
+
+### Riscos / pontos de incerteza (v9)
+
+- Goldfeld-Quandt (`statsmodels`) devolve `NaN` para F/p-valor com menos de
+  ~6 resíduos (confirmado empiricamente) — `core.py` precisa validar um
+  mínimo de linhas e lançar `DadosInvalidosError` amigável antes disso,
+  igual ao padrão já usado no Shapiro-Wilk (mínimo de 3).
+- O script de aula escalona X com `StandardScaler` antes de treinar;
+  confirmado matematicamente e empiricamente que R² não muda com essa
+  transformação afim (mesma reta em outra parametrização) — o app **não**
+  precisa adotar escalonamento para bater com a referência da aula.
+- `sms.het_goldfeldquandt` não ordena as observações por padrão (usa a
+  ordem original do conjunto de teste) — mesma forma "crua" usada no
+  script de aula; documentar isso no texto da UI para não parecer mais
+  rigoroso do que realmente é.
+
+### Critérios de aceite (v9)
+
+- `pytest` continua passando; novos casos cobrem `publicidade.csv` (R² de
+  referência com as 3 variáveis e com o melhor subconjunto) e as duas
+  funções novas de `core.py`.
+- R² de referência do dataset `publicidade.csv`, com `test_size=0.3,
+  random_state=0`: **0.8649** com as 3 variáveis (TV, Rádio, Jornal);
+  **0.8657** com o melhor subconjunto (TV + Rádio).
+- Aba Diagnóstico renderiza sem erro nos datasets existentes e no novo
+  `publicidade.csv`, nos modos Simples, Múltipla e Polinomial.
+- `ai-dlc/aulas-log.md` reflete os 2 arquivos novos como revisados/integrados.
+
 ## Perguntas de validação
 
 - Resolvidas nesta rodada (via perguntas equivalentes de Inception antes da
@@ -427,3 +507,7 @@ exaustiva). Implementada no Bolt 36 (`BOLTS.md`).
 - **Resolvida na v8:** opção A (melhor subconjunto por busca exaustiva) foi
   a escolhida -- ver "Decisão validada" acima. Nenhuma pergunta em aberto
   no momento.
+- **Resolvidas na v9:** independência dos resíduos usa os dois testes
+  (Ljung-Box + Durbin-Watson, com nota de divergência); colinearidade
+  duplica o heatmap dentro da aba Diagnóstico. Ver "Decisões validadas
+  (v9)" acima. Nenhuma pergunta em aberto no momento.

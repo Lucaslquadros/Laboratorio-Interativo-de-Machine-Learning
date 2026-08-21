@@ -19,3 +19,5 @@
 | `base_salarios.csv` | Dataset | Revisado | Idêntico (`diff` bit-a-bit) a `data/base_salarios.csv`; nenhuma ação | 2026-08-19 |
 | `USA_Housing.csv` | Dataset | Revisado | Idêntico (`diff` bit-a-bit) a `data/USA_Housing.csv`; nenhuma ação | 2026-08-19 |
 | `50_Startups.csv` | Dataset | Integrado | Copiado para `data/` sem as colunas dummy de Estado; entrada nova em `DATASETS` (`app.py`), R²≈0.9431 confirmado por teste (Bolts 31-32) | 2026-08-19 |
+| `publicidade.csv` | Dataset | Integrado | Copiado para `data/`; entrada nova em `DATASETS` (`app.py`); R²≈0.8649 (3 vars) / 0.8657 (melhor subconjunto TV+Rádio) confirmado por teste (Bolts 38-39) | 2026-08-20 |
+| `exemplo_teste_suposicao.py` | Código | Integrado | Expôs 3 lacunas na aba Diagnóstico (homocedasticidade formal, independência dos resíduos, colinearidade) — implementadas em `core.py`/`app.py` (Bolts 40-42); linearidade e média dos resíduos já estavam cobertas | 2026-08-20 |

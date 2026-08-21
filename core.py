@@ -17,6 +17,7 @@ import itertools
 
 import numpy as np
 import pandas as pd
+import statsmodels.stats.api as sms
 from scipy import stats
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import (
@@ -358,6 +359,50 @@ def testar_normalidade_residuos(residuos):
         )
     estatistica, p_valor = stats.shapiro(residuos)
     return float(estatistica), float(p_valor)
+
+
+def testar_homocedasticidade_residuos(residuos, X_teste):
+    """Teste de Goldfeld-Quandt: H0 = os resíduos têm variância constante
+    (homocedasticidade). p-valor > 0.05 -> não há evidência para rejeitar
+    H0 (variância parece constante). Segue a mesma metodologia de
+    `aulas/exemplo_teste_suposicao.py`: não reordena as observações antes
+    de dividir a amostra em duas partes -- usa a ordem em que já vêm no
+    conjunto de teste."""
+    residuos = np.asarray(residuos, dtype=float)
+    if len(residuos) < 6:
+        raise DadosInvalidosError(
+            "São necessários pelo menos 6 resíduos para o teste de "
+            "homocedasticidade de Goldfeld-Quandt -- aumente o conjunto de teste."
+        )
+    estatistica, p_valor, _ = sms.het_goldfeldquandt(residuos, np.asarray(X_teste))
+    return float(estatistica), float(p_valor)
+
+
+def testar_independencia_residuos(residuos):
+    """Dois testes de independência (ausência de autocorrelação) dos
+    resíduos, como em `aulas/exemplo_teste_suposicao.py`:
+
+    - Ljung-Box: H0 = ausência de autocorrelação em qualquer um dos lags
+      testados. p-valor > 0.05 em TODOS os lags -> não rejeita H0.
+    - Durbin-Watson: estatística entre 0 e 4; próxima de 2 indica ausência
+      de autocorrelação (< 1.5 sugere autocorrelação positiva, > 2.5
+      sugere autocorrelação negativa).
+
+    Os dois testes podem discordar entre si (Ljung-Box é sensível a vários
+    lags ao mesmo tempo; Durbin-Watson foca só na autocorrelação de lag 1)
+    -- por isso os dois são reportados juntos, em vez de só um."""
+    residuos = np.asarray(residuos, dtype=float)
+    if len(residuos) < 3:
+        raise DadosInvalidosError(
+            "São necessários pelo menos 3 resíduos para os testes de "
+            "independência (Ljung-Box/Durbin-Watson) -- aumente o "
+            "conjunto de teste."
+        )
+    lags = min(40, len(residuos) - 1)
+    resultado_ljungbox = sms.acorr_ljungbox(residuos, lags=lags, return_df=True)
+    p_valor_ljungbox = float(resultado_ljungbox["lb_pvalue"].min())
+    estatistica_durbin_watson = float(sms.durbin_watson(residuos))
+    return p_valor_ljungbox, estatistica_durbin_watson
 
 
 # ============================================================================

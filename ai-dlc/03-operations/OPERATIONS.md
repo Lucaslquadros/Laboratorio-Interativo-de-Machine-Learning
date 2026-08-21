@@ -44,7 +44,15 @@ com cada arquivo). Isso evita reanalisar tudo do zero a cada rodada.
 
 ## Como verificar que está saudável
 
-- [x] `pytest` passa sem falhas (50 casos em `tests/test_core.py`)
+- [x] `pytest` passa sem falhas (57 casos em `tests/test_core.py`)
+- [x] Aba Diagnóstico dos Resíduos: teste de Goldfeld-Quandt (homocedasticidade),
+      testes de Ljung-Box + Durbin-Watson (independência, com nota de
+      divergência) e heatmap de colinearidade (variáveis X escolhidas)
+      renderizam sem erro nos modos Simples, Múltipla e Polinomial --
+      testado no navegador com o dataset "📢 Publicidade x Vendas"
+- [x] Dataset "📢 Publicidade x Vendas (aula)" (`publicidade.csv`) aparece
+      no seletor; modo Múltipla com TV+Rádio+Jornal reproduz R²≈0.8649, e o
+      leaderboard/melhor subconjunto descarta Jornal e reproduz R²≈0.8657
 - [x] Aba Comparação → leaderboard: a linha "Múltipla" testa todas as
       combinações de variáveis candidatas e usa a de maior R² (não mais
       "todas as colunas"); no dataset Startups escolhe `R&D Spend` +
@@ -105,6 +113,25 @@ com cada arquivo). Isso evita reanalisar tudo do zero a cada rodada.
 
 ## Changelog
 
+- **2026-08-20** — v9 (Ingestão de `aulas/`: teste de suposições + dataset
+  Publicidade, Bolts 38-43 do AI-DLC): o Lucas adicionou
+  `exemplo_teste_suposicao.py` e `publicidade.csv` em `aulas/`; a checagem
+  de alinhamento (processo da v7) encontrou 3 lacunas reais na aba
+  "🩺 Diagnóstico dos Resíduos" (tópico #4 do syllabus), que antes só cobria
+  média dos resíduos e normalidade (Shapiro-Wilk). Novo dataset "📢
+  Publicidade x Vendas (aula)" (`publicidade.csv`, 200 mercados, TV/Rádio/
+  Jornal → Vendas) integrado a `data/` e ao seletor. `core.py` ganhou
+  `testar_homocedasticidade_residuos()` (teste de Goldfeld-Quandt) e
+  `testar_independencia_residuos()` (Ljung-Box + Durbin-Watson) --
+  `statsmodels` adicionado a `requirements.txt`. A aba Diagnóstico ganhou 3
+  seções novas: teste formal de homocedasticidade (complementa o gráfico já
+  existente), independência dos resíduos com os dois testes lado a lado
+  (decisão de Inception: mostrar os dois, com nota explicando que podem
+  discordar -- confirmado na prática com o dataset de Publicidade em modo
+  Simples) e heatmap de colinearidade das variáveis X escolhidas (decisão
+  de Inception: duplicar o heatmap já existente em "Dados & Correlação",
+  para reunir todas as suposições num só lugar). Suíte `pytest` ampliada
+  para 57 casos. `ai-dlc/aulas-log.md` atualizado com os 2 arquivos novos.
 - **2026-08-19** — v8 (Leaderboard: Múltipla busca o melhor subconjunto de
   variáveis, Bolts 36-37 do AI-DLC): corrigido bug de design reportado pelo
   Lucas (screenshot ao vivo do app) -- a linha "Múltipla" da aba Comparação

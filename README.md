@@ -43,8 +43,10 @@ Hoje tem dois grandes "Tipos de Tarefa":
   modo Simples, ou gráfico Previsto vs. Real no modo Múltipla (não dá para
   desenhar uma reta em N dimensões).
 - **Diagnóstico dos Resíduos**: Estudo de Adequação do Modelo -- gráfico de
-  Resíduos vs. Previstos, histograma dos resíduos e teste de normalidade
-  de Shapiro-Wilk com interpretação.
+  Resíduos vs. Previstos, teste de homocedasticidade (Goldfeld-Quandt),
+  histograma dos resíduos e teste de normalidade (Shapiro-Wilk),
+  independência dos resíduos (Ljung-Box + Durbin-Watson) e heatmap de
+  colinearidade das variáveis X (modo Múltipla), todos com interpretação.
 - **Previsão**: um input por variável X para você escolher novos valores e
   ver a previsão de y em tempo real.
 - **Comparação**: leaderboard que treina automaticamente todos os modelos
@@ -95,6 +97,12 @@ um trecho decorativo, é exatamente o comando executado.
   (Diagnostic) Data Set (UCI ML Repository / scikit-learn), 569 casos, 30
   medidas numéricas, alvo genuinamente categórico (Maligno/Benigno).
   Regressão Logística treina com acurácia estável entre 90% e 98%.
+- `data/publicidade.csv` — o mesmo usado no `exemplo_teste_suposicao.py`
+  (200 mercados: orçamento de publicidade em TV, Rádio e Jornal, e as
+  Vendas resultantes). Bom para ver os testes de suposições da aba
+  Diagnóstico em ação -- Jornal tem correlação fraca com Vendas (R² ≈
+  0.8649 com as 3 variáveis, 0.8657 com o melhor subconjunto TV+Rádio,
+  `test_size=0.3`, `random_state=0`).
 
 Você também pode carregar qualquer outro `.csv` seu pelo painel lateral.
 
@@ -192,6 +200,27 @@ Polinomial e Regressão Logística):
 - **Dataset novo**: `50_Startups.csv`, incorporado seguindo o script de
   aula (ver "Datasets incluídos" acima).
 
+## Testes de suposições avançados + dataset Publicidade (v9)
+
+Segunda rodada do fluxo de ingestão de `aulas/`: o script
+`exemplo_teste_suposicao.py` (sobre as 6 suposições da regressão linear)
+expôs 3 lacunas na aba Diagnóstico, que até então só cobria média dos
+resíduos e normalidade:
+
+- **Homocedasticidade**: teste de Goldfeld-Quandt (`statsmodels`),
+  complementando o gráfico Resíduos vs. Previstos já existente.
+- **Independência dos resíduos**: testes de Ljung-Box e Durbin-Watson
+  lado a lado -- podem discordar entre si (cada um capta um tipo de
+  autocorrelação), então os dois são mostrados juntos, com uma nota
+  explicando a possível divergência.
+- **Ausência de colinearidade**: heatmap de correlação entre as variáveis
+  X escolhidas (modo Múltipla), duplicando o já existente em "Dados &
+  Correlação" para reunir todas as suposições num só lugar.
+- **Dataset novo**: `publicidade.csv` (ver "Datasets incluídos" acima).
+
+`testar_homocedasticidade_residuos()` e `testar_independencia_residuos()`
+vivem em `core.py`, ao lado de `testar_normalidade_residuos()`.
+
 ## Roadmap (v6 — mudança de visão)
 
 O objetivo mudou de "laboratório de regressão" para **consulta oficial de
@@ -254,11 +283,12 @@ data/
   mortalidade_infantil_desenvolvimento.csv
   diagnostico_cancer_mama.csv
   50_Startups.csv
+  publicidade.csv
 scripts/
   baixar_dados_ods.py            # baixa os 2 datasets de ODS do World Bank
   baixar_dados_classificacao.py  # monta o dataset de câncer de mama (scikit-learn)
 tests/
-  test_core.py               # pytest, 48 casos
+  test_core.py               # pytest, 57 casos
 aulas/                       # caixa de entrada: slides, datasets e scripts de aula
 ai-dlc/                      # AI-DLC enxuto deste projeto (ver acima)
   CLAUDE.md

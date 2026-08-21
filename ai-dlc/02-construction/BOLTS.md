@@ -432,6 +432,66 @@
 - **Checkpoint:** `pytest` passa; leaderboard testado no navegador.
 - **Status:** feito
 
+## Bolt 38 — Dataset `publicidade.csv` integrado ao app
+
+- **Objetivo:** copiar `aulas/publicidade.csv` para `data/` e adicionar
+  entrada nova em `DATASETS` (`app.py`), seguindo o padrão do
+  `50_Startups.csv` (v7).
+- **Entregável:** `data/publicidade.csv`; `DATASETS["📢 Publicidade x
+  Vendas (aula)"]` em `app.py`.
+- **Checkpoint:** dataset aparece no seletor, treina sem erro nos 3 modos
+  de regressão.
+- **Status:** feito
+
+## Bolt 39 — Teste automatizado do dataset `publicidade.csv`
+
+- **Objetivo:** confirmar por `pytest` o R² de referência calculado
+  manualmente (0.8649 com as 3 variáveis; 0.8657 com o melhor
+  subconjunto), igual ao padrão já usado para `50_Startups.csv` (Bolt 32).
+- **Entregável:** casos novos em `tests/test_core.py`.
+- **Checkpoint:** `pytest` passa.
+- **Status:** feito
+
+## Bolt 40 — Núcleo dos testes de homocedasticidade e independência em `core.py`
+
+- **Objetivo:** `testar_homocedasticidade_residuos()` (Goldfeld-Quandt,
+  via `statsmodels`) e `testar_independencia_residuos()` (Ljung-Box +
+  Durbin-Watson), replicando a metodologia de
+  `aulas/exemplo_teste_suposicao.py`.
+- **Entregável:** as duas funções em `core.py`; `statsmodels` em
+  `requirements.txt`.
+- **Checkpoint:** funções rodam sem erro contra resíduos reais dos
+  datasets existentes.
+- **Status:** feito
+
+## Bolt 41 — Testes automatizados de `testar_homocedasticidade_residuos` e `testar_independencia_residuos`
+
+- **Objetivo:** cobrir os casos de sucesso e os erros de dados
+  insuficientes (padrão já usado para `testar_normalidade_residuos`).
+- **Entregável:** casos novos em `tests/test_core.py`.
+- **Checkpoint:** `pytest` passa.
+- **Status:** feito
+
+## Bolt 42 — Aba "🩺 Diagnóstico dos Resíduos": homocedasticidade, independência e colinearidade
+
+- **Objetivo:** adicionar as 3 seções que faltavam na aba (teste de
+  Goldfeld-Quandt, testes de Ljung-Box/Durbin-Watson com nota de
+  divergência, heatmap de colinearidade das variáveis X escolhidas),
+  seguindo o mesmo padrão visual do Shapiro-Wilk já existente.
+- **Entregável:** `app.py` (bloco da aba Diagnóstico).
+- **Checkpoint:** aba renderiza sem erro nos datasets existentes e no
+  `publicidade.csv`, nos modos Simples, Múltipla e Polinomial; testado no
+  navegador.
+- **Status:** feito
+
+## Bolt 43 — Documentação de fechamento da v9
+
+- **Objetivo:** atualizar `OPERATIONS.md` (changelog v9) e marcar os bolts
+  38-43 como `feito` aqui.
+- **Entregável:** `OPERATIONS.md`, `BOLTS.md`.
+- **Checkpoint:** `pytest` passa; app testado no navegador.
+- **Status:** feito
+
 ---
 
 ## Registro de bolts concluídos
@@ -506,3 +566,17 @@
   `core.py`; leaderboard passa a mostrar a combinação de variáveis com
   maior R² em vez de sempre usar todas (50 testes no total).
 - **2026-08-19** — Bolt 37: `OPERATIONS.md` atualizado para a v8.
+- **2026-08-20** — Bolt 38: `data/publicidade.csv` + entrada nova em
+  `DATASETS` (`app.py`).
+- **2026-08-20** — Bolt 39: teste automatizado confirma R²≈0.8649 (3
+  variáveis) e R²≈0.8657 (melhor subconjunto TV+Rádio) no dataset novo,
+  batendo com `exemplo_teste_suposicao.py` (52 casos no total).
+- **2026-08-20** — Bolt 40: `testar_homocedasticidade_residuos()` (Goldfeld-
+  Quandt) e `testar_independencia_residuos()` (Ljung-Box + Durbin-Watson)
+  em `core.py`; `statsmodels` em `requirements.txt`.
+- **2026-08-20** — Bolt 41: testes automatizados das duas funções novas (57
+  casos no total).
+- **2026-08-20** — Bolt 42: aba Diagnóstico dos Resíduos ganha 3 seções
+  (homocedasticidade formal, independência com nota de divergência,
+  colinearidade) -- testado no navegador nos 3 modos de regressão.
+- **2026-08-20** — Bolt 43: `OPERATIONS.md` atualizado para a v9.
