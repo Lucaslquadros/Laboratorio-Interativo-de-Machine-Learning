@@ -5,3 +5,8 @@ __pycache__/
 venv/
 *.egg-info/
 .claude/settings.local.json
+
+# Datasets brutos e grandes que não são usados pelo app (fora de data/) --
+# ficam no disco como referência pessoal, sem inflar o repositório.
+aulas/ac1_lucas/base_pacientes_covid.csv
+aulas/ac1_lucas/base_pacientes_COVID_preparada.csv

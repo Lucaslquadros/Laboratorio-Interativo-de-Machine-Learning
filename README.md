@@ -23,6 +23,13 @@ Hoje tem dois grandes "Tipos de Tarefa":
 
 ## O que tem dentro
 
+- **🎓 Revisão da Prova Parcial**: primeira aba, página única e estática de
+  consulta (não depende do dataset escolhido), **cumulativa** — cresce a
+  cada novo tópico coberto pelo app. Todo o pipeline em Python à mostra:
+  checklist do fluxo, script de "cola" por algoritmo (estilo dos exercícios
+  do professor, incluindo Polinomial com grau automático e Regularização),
+  o código real de `core.py`, uma seção comparando os 5 pipelines lado a
+  lado, e um gabarito com os valores de referência de cada dataset de aula.
 - **Passo 0**: antes de treinar qualquer coisa, guia o aluno a classificar o
   problema (alvo rotulado ou não → contínuo ou categórico → binário ou
   multiclasse) com a taxonomia exata do professor e um quiz que recomenda o
@@ -39,7 +46,7 @@ Hoje tem dois grandes "Tipos de Tarefa":
   Simples, os coeficientes (β₀, β₁) são recalculados **na mão**, pela fórmula
   do slide, para provar que batem — a "caixa-preta" é aberta. No modo
   Múltipla, mostra o intercepto e uma tabela com um coeficiente por variável.
-- **Avaliação**: R², MAE e MSE do modelo — com gráfico de dispersão + reta no
+- **Avaliação**: R², MAE, MSE e RMSE do modelo — com gráfico de dispersão + reta no
   modo Simples, ou gráfico Previsto vs. Real no modo Múltipla (não dá para
   desenhar uma reta em N dimensões).
 - **Diagnóstico dos Resíduos**: Estudo de Adequação do Modelo -- gráfico de
@@ -103,6 +110,29 @@ um trecho decorativo, é exatamente o comando executado.
   Diagnóstico em ação -- Jornal tem correlação fraca com Vendas (R² ≈
   0.8649 com as 3 variáveis, 0.8657 com o melhor subconjunto TV+Rádio,
   `test_size=0.3`, `random_state=0`).
+- `data/finance_market.csv` — o mesmo usado em `correcao_regsimples.py`
+  (500 observações: preço de um ETF explicado pelo Índice S&P500). Ajuste
+  quase perfeito: R² ≈ 0.9987, RMSE ≈ 0.55 com `test_size=0.3`,
+  `random_state=42` (semente do script de correção, diferente do padrão
+  `random_state=0` do app).
+- `data/agro_tech.csv` — o mesmo usado em `regressao_simples.py`/
+  `regressao_multipla.py` (450 observações: produtividade agrícola
+  explicada por clima e insumos). Simples com `precipitacao_anual` dá
+  R² ≈ 0.4847; Múltipla somando `fertilizante_kg_ha` sobe para R² ≈ 0.8705
+  (`test_size=0.3`, `random_state=0`).
+- `data/base_plano_saude_preparada.csv` — o mesmo usado em
+  `correcao_teste_suposicao.py` (2772 observações: gastos com plano de
+  saúde explicados por idade, IMC, filhos, gênero, fumante e região já
+  codificada em dummies). **Exemplo intencional de mau ajuste** (R² ≈ 0.18)
+  — correlações fracas com o alvo e o próprio script do professor conclui
+  que o modelo viola homocedasticidade e normalidade dos resíduos. Bom para
+  testar a aba Diagnóstico num caso que realmente falha.
+- `data/comissao.csv` — o mesmo usado em `exemplo_polinomial.py` (Aula6,
+  convertido de `comissao.xlsx`): 50 observações, `quantidade` vendida x
+  `comissao` recebida, construído como uma parábola exata. No modo Simples
+  (grau 1), a equação prevê comissão **negativa** para quantidades baixas
+  (não faz sentido) -- no modo Polinomial com grau 2 (manual ou automático
+  via GridSearchCV), o ajuste fica essencialmente perfeito (R² ≈ 1.0).
 
 Você também pode carregar qualquer outro `.csv` seu pelo painel lateral.
 
@@ -221,12 +251,64 @@ resíduos e normalidade:
 `testar_homocedasticidade_residuos()` e `testar_independencia_residuos()`
 vivem em `core.py`, ao lado de `testar_normalidade_residuos()`.
 
-## Roadmap (v6 — mudança de visão)
+## RMSE + datasets das correções do professor (v10)
+
+Terceira rodada do fluxo de ingestão, desta vez em `aulas/correcoes/`
+(scripts de correção do professor, cada um ao lado de um dataset):
+
+- **RMSE**: `correcao_regsimples.py` calculava RMSE além de R²/MAE/MSE —
+  métrica adicionada em `avaliar_modelo()` (`core.py`) e propagada para a
+  aba Avaliação e o leaderboard da Comparação.
+- **3 datasets novos**: `finance_market.csv`, `agro_tech.csv` e
+  `base_plano_saude_preparada.csv` (ver "Datasets incluídos" acima) —
+  o último é o primeiro caso do app onde o modelo linear **não** satisfaz
+  as suposições, mantido de propósito como contraste com os demais.
+- **`data/` como fonte única**: os datasets passaram a ser movidos (não
+  copiados) para `data/`; duplicados que existiam em `aulas/` (raiz) foram
+  removidos por serem redundantes.
+
+## Grau ótimo via validação cruzada + varredura de `Aula3`-`Aula7` (v12)
+
+O Lucas pediu uma varredura de todas as pastas de aula soltas em `ML/`
+(fora do `Estudo_1`) contra o que já tinha sido revisado. Resultado e nova
+regra de priorização (conteúdo já apresentado em aula passa à frente de
+tópicos do syllabus ainda não vistos) documentados em
+`ai-dlc/01-inception/INCEPTION.md`. Desta rodada saiu um bolt fechado:
+
+- **Grau do polinômio via `GridSearchCV`**: o material real de aula (Aula6)
+  nunca escolhe o grau manualmente — sempre via validação cruzada
+  (`Pipeline(PolynomialFeatures, LinearRegression)` dentro de um
+  `GridSearchCV`, graus 1-6). Adicionado como **opção extra** no modo
+  Polinomial (`escolher_grau_polinomial_cv()` em `core.py`), ao lado do
+  slider manual já existente — um radio na sidebar alterna entre os dois.
+- **Regularização (Ridge/Lasso/ElasticNet, item 6b)**: o professor só
+  apresentou a técnica em cima de Regressão Múltipla (não Polinomial, não
+  Logística) — escopo desta rodada ficou restrito a isso. Toggle
+  "Regularizar?" dentro do modo Múltipla compara Ridge/Lasso/ElasticNet
+  (hiperparâmetros escolhidos por `GridSearchCV` **dentro do treino**) com a
+  Múltipla sem regularização, avaliados no **mesmo conjunto de teste**
+  (R²/MAE/MSE/RMSE) — diretamente comparável com a Múltipla "oficial" da
+  aba Avaliação (revisão pós-checkpoint: a primeira versão seguia a
+  convenção do script, CV pura sem split, mas isso impedia comparar de
+  forma justa). Aba Treinamento mostra hiperparâmetros + coeficientes; aba
+  Avaliação mostra as métricas lado a lado, com o melhor R² em destaque;
+  leaderboard da Comparação ganhou linhas Ridge/Lasso/ElasticNet
+  (independente do toggle, usando todas as colunas candidatas — a
+  penalidade já seleciona variável sozinha). Usa o dataset "👶 Mortalidade
+  Infantil & Desenvolvimento" (já no app) em vez do `diabetes.csv` do
+  script, porque tem colinearidade real equivalente
+  (`Saneamento_pct`/`Agua_Potavel_pct`, r≈0.906) sem a complicação do
+  escalonamento não-padrão daquele dataset.
+
+## Roadmap (v6 — mudança de visão; reordenado na v12)
 
 O objetivo mudou de "laboratório de regressão" para **consulta oficial de
 ML** do semestre: cobrir, um algoritmo por vez, os 14 tópicos do syllabus da
-disciplina antes de cogitar algo fora do programa. Detalhes e decisões em
-`ai-dlc/01-inception/INCEPTION.md`.
+disciplina antes de cogitar algo fora do programa. Na v12 essa regra ganhou
+uma exceção: conteúdo **já apresentado em aula** (mesmo fora dos 14
+originais) passa à frente de tópicos ainda não vistos — por isso
+Regularização (6b) vem antes de Árvores de Decisão (7). Detalhes e decisões
+em `ai-dlc/01-inception/INCEPTION.md`.
 
 | Tópico | Status |
 |--------|--------|
@@ -234,8 +316,9 @@ disciplina antes de cogitar algo fora do programa. Detalhes e decisões em
 | 2. Regressão Linear Simples | ✅ |
 | 3. Regressão Linear Múltipla | ✅ |
 | 4. Estudo de Adequação do Modelo (resíduos) | ✅ |
-| 5. Regressão Polinomial | ✅ |
+| 5. Regressão Polinomial | ✅ (grau manual + automático via CV, v12) |
 | 6. Regressão Logística | ✅ |
+| 6b. Regularização (Ridge / Lasso / ElasticNet) — fora do syllabus original, priorizada por já ter sido apresentada (Aula7) | ✅ v13 (toggle na Múltipla) |
 | 7. Árvores de Decisão | ⬜ |
 | 8. K-NN | ⬜ |
 | 9. Random Forest | ⬜ |
@@ -284,12 +367,16 @@ data/
   diagnostico_cancer_mama.csv
   50_Startups.csv
   publicidade.csv
+  finance_market.csv
+  agro_tech.csv
+  base_plano_saude_preparada.csv
 scripts/
   baixar_dados_ods.py            # baixa os 2 datasets de ODS do World Bank
   baixar_dados_classificacao.py  # monta o dataset de câncer de mama (scikit-learn)
 tests/
-  test_core.py               # pytest, 57 casos
-aulas/                       # caixa de entrada: slides, datasets e scripts de aula
+  test_core.py               # pytest, 70 casos
+aulas/                       # caixa de entrada: slides e scripts de aula (datasets vivem em data/)
+  correcoes/                 # scripts de correção do professor (datasets movidos para data/)
 ai-dlc/                      # AI-DLC enxuto deste projeto (ver acima)
   CLAUDE.md
   README.md

@@ -27,8 +27,9 @@ expandir para algoritmos fora do programa da matéria.
 | 2 | Regressão Linear Simples | ✅ v1 |
 | 3 | Regressão Linear Múltipla | ✅ v3 |
 | 4 | Estudo de Adequação do Modelo (resíduos, diagnóstico) | ✅ v5 (Fase A) |
-| 5 | Regressão Polinomial | ✅ v5 (Fase B) |
+| 5 | Regressão Polinomial | ✅ v5 (manual) + v12/Bolt 50-52 (grau automático via `GridSearchCV`, opção extra ao lado do manual) |
 | 6 | Regressão Logística | ✅ v5 (Fase C) |
+| 6b | **Regularização (Ridge / Lasso / ElasticNet)** — fora dos 14 originais, apresentada na Aula7; priorizada à frente dos itens 7-14 (ver regra acima) | ✅ v13 — toggle na Múltipla, escopo restrito a Múltipla+Regularização (sem Polinomial/Logística, não apresentado em aula) |
 | 7 | Árvores de Decisão (estrutura, critérios de divisão, poda) | ⬜ pendente |
 | 8 | K-NN (vizinhos mais próximos) | ⬜ pendente |
 | 9 | Random Forest (ensemble) | ⬜ pendente |
@@ -43,6 +44,17 @@ Inception → Construction → Operations, como Múltipla/Polinomial/Logística
 antes deles). Itens 11-13 são mais conceituais/transversais — tendem a virar
 conteúdo na aba Teoria e, quando fizer sentido, ajustes na aba Comparação
 (ex.: validação cruzada) em vez de "modelos" novos por si só.
+
+**Regra de priorização (decidida na v12, substitui a prioridade "ordem do
+syllabus" da v6 sempre que houver conflito):** conteúdo que o professor **já
+apresentou em aula** (mesmo que fora dos 14 tópicos originais) tem prioridade
+sobre tópicos do syllabus que **ainda não foram apresentados**. Motivo: o
+app é uma consulta de estudo para o semestre em andamento — não faz sentido
+adiantar Árvores de Decisão (item 7, não apresentado ainda) enquanto há
+material de aula real (Regularização, item 6b) esperando revisão. Na
+prática: **Regularização (Ridge/Lasso/ElasticNet)** — apresentada na Aula7,
+não fazia parte da lista original de 14 — entra como **item 6b**, com
+prioridade sobre os itens 7-14. Ver "Requisitos funcionais (v12)" abaixo.
 
 ### Decisões validadas com o Lucas (rodada da mudança de visão)
 
@@ -487,6 +499,484 @@ Ljung-Box e Durbin-Watson; já estava instalada no ambiente, mas ausente do
 - Aba Diagnóstico renderiza sem erro nos datasets existentes e no novo
   `publicidade.csv`, nos modos Simples, Múltipla e Polinomial.
 - `ai-dlc/aulas-log.md` reflete os 2 arquivos novos como revisados/integrados.
+
+## Requisitos funcionais (v10 — Ingestão de `aulas/correcoes/`: RMSE + 3 datasets novos + organização de `data/`)
+
+Motivo: o Lucas adicionou `aulas/correcoes/` com 3 pastas (baixadas do Google
+Drive, nomes com timestamp) contendo scripts de correção do professor, cada
+um ao lado de um dataset usado no exercício. Ele também notou que datasets
+ficaram espalhados entre `aulas/` e `aulas/correcoes/` quando já existe
+`data/` para isso, e pediu para consolidar tudo lá.
+
+### Leitura dos arquivos novos
+
+| Arquivo | O que é | Ação |
+|---|---|---|
+| `correcao_regsimples.py` + `finance_market.csv` (500 linhas) | Regressão Simples: X=`Indice_S&P500`, y=`ETF_Preco`, `test_size=0.3, random_state=42` | **Dataset novo** — integrar. Calcula **RMSE**, métrica que o app não tinha |
+| `regressao_multipla.py` + `regressao_simples.py` + `agro_tech.csv` (450 linhas) | Simples (X=`precipitacao_anual`) e Múltipla (+`fertilizante_kg_ha`), y=`toneladas_por_hectare`, `test_size=0.3, random_state=0` | **Dataset novo** — integrar. Metodologia idêntica ao já implementado (heatmap, R²/MAE/MSE, reta) |
+| `correcao_teste_suposicao.py` + `base_plano_saude_preparada.csv` (2772 linhas) | Múltipla com as 6 suposições da regressão (mesmas da v9), mas aqui o **modelo falha**: heterocedasticidade e resíduos não-normais confirmados pelo próprio script do professor | **Dataset novo** — integrar como exemplo intencional de "mau ajuste" na aba Diagnóstico. Sem técnica nova (mesmos testes da v9) |
+
+### Gap de código confirmado
+
+- `core.py::avaliar_modelo()` retorna só R², MAE, MSE — `correcao_regsimples.py`
+  trata **RMSE** como métrica padrão de avaliação. Gap real, mesmo padrão das
+  lacunas achadas em v9.
+
+### Valores de referência (reproduzidos e conferidos)
+
+- `finance_market.csv`: R²≈0.9987, MAE≈0.44, MSE≈0.30, RMSE≈0.55
+  (`test_size=0.3, random_state=42` — diferente do padrão do app, que é
+  `random_state=0`; documentar os dois).
+- `agro_tech.csv`: Simples R²≈0.4847 (MAE≈2.3037, MSE≈7.3525) → Múltipla
+  R²≈0.8705 (MAE≈1.1035, MSE≈1.8481), batendo exatamente com os números do
+  script do professor. Top-2 por correlação com y já é
+  `precipitacao_anual` + `fertilizante_kg_ha` — o app escolhe isso
+  automaticamente sem configuração extra.
+- `base_plano_saude_preparada.csv`: correlações fracas (máx. |r|=0.335,
+  `Sudoeste`); R²≈0.18 usando todas as colunas — confirma que é mesmo um
+  caso de mau ajuste, não um bug de leitura.
+
+### Decisões validadas com o Lucas (v10, via `AskUserQuestion`)
+
+- **RMSE:** adicionar como métrica padrão em `core.py` (`avaliar_modelo`),
+  aba Avaliação e leaderboard da Comparação, coberta por `pytest`.
+- **Organização de `data/`:** os 3 datasets novos são **movidos** (não
+  copiados) de `aulas/correcoes/.../programas/` para `data/` — os scripts
+  `.py` de correção continuam em `aulas/correcoes/` como referência, sem o
+  CSV ao lado. Mesma lógica aplicada aos duplicados que já existiam em
+  `aulas/` (nível raiz): `base_salarios.csv`, `USA_Housing.csv` e
+  `publicidade.csv` são bit-idênticos aos de `data/` (confirmado por
+  `diff`) — removidos de `aulas/` por serem puramente redundantes.
+  `aulas/50_Startups.csv` (com as colunas dummy de `State`, nunca usadas)
+  também é removido — `data/50_Startups.csv` (sem as dummies) já é a
+  versão oficial desde a v7. Tudo sob controle de versão (`git`), então
+  reversível se necessário.
+- **Colunas dummy de `base_plano_saude_preparada.csv`:** ao contrário do
+  precedente do `50_Startups.csv` (v7, dummies escondidas), aqui a decisão
+  foi **incluir todas as colunas** (`Noroeste`/`Sudeste`/`Sudoeste`
+  inclusive) como candidatas a X, replicando o que o script do professor
+  faz sem ressalva — o app já seleciona por correlação automaticamente, sem
+  precisar de tratamento especial no código.
+
+### Riscos / pontos de incerteza (v10)
+
+- `finance_market.csv` usa `random_state=42` como referência do professor,
+  diferente do padrão de todos os outros datasets (`random_state=0`) — a
+  descrição do dataset documenta os dois valores para não confundir quando
+  o usuário mantiver o padrão do app.
+- Nenhuma técnica estatística nova em `correcao_teste_suposicao.py` além da
+  v9 — não requer bolt de `core.py` novo, só integração do dataset.
+
+### Critérios de aceite (v10)
+
+- `pytest` continua passando; novos casos cobrem os 3 datasets (R²/MAE/MSE
+  de referência) e o RMSE (bate com `np.sqrt(MSE)` em casos já existentes).
+- Os 3 datasets aparecem no seletor de datasets e treinam sem erro nos 3
+  modos de regressão.
+- RMSE aparece na aba Avaliação e no leaderboard da Comparação.
+- `data/` passa a ser a única cópia de cada dataset — nenhum CSV duplicado
+  sobra em `aulas/` ou `aulas/correcoes/`.
+- `ai-dlc/aulas-log.md` reflete os arquivos novos revisados/integrados.
+
+## Requisitos funcionais (v11 — Aba de Revisão para a prova, Inception abreviada)
+
+Motivo: o Lucas tem prova prática amanhã (2026-08-27) e pediu uma página
+única reunindo todo o conhecimento do semestre, com **todo o código Python
+à vista** (a prova é prática). Pediu para usar o AI-DLC e decidir onde
+encaixar no app. Dado o prazo, esta rodada usa uma Inception **abreviada**
+(decisões tomadas diretamente, sem rodada de `AskUserQuestion`) -- validação
+acontece no checkpoint do bolt único, testando no navegador.
+
+- **Onde encaixar:** nova aba **"🎓 Revisão da Prova"**, primeira da lista
+  (antes de Passo 0) nos dois Tipos de Tarefa -- vira a aba padrão ao abrir
+  o app, ideal para consulta rápida. Estática (não depende do dataset
+  selecionado na sidebar), para nunca quebrar independente da escolha atual.
+- **Conteúdo, em duas camadas:**
+  1. **Scripts prontos (estilo "cola de prova")** -- para cada algoritmo já
+     coberto (Simples, Múltipla, Polinomial, Diagnóstico de Resíduos,
+     Logística), um bloco de código único, sequencial, no mesmo estilo dos
+     scripts do professor (`aulas/`, `aulas/correcoes/`) -- `pd.read_csv` →
+     X/y → `train_test_split` → `.fit()` → métricas → predição -- pronto
+     para adaptar rápido numa prova prática, sem precisar entender a
+     modularização do app.
+  2. **Implementação real do app** -- as mesmas funções de `core.py` via
+     `inspect.getsource` (já usado em toda a UI), para conferir a versão
+     "de produção" caso o script de cola não seja suficiente.
+  3. **Tabela de valores de referência** (gabarito) dos datasets de aula --
+     útil para conferir se o resultado da prova bate com o esperado.
+- **Escopo:** só os tópicos já implementados no app (Simples, Múltipla,
+  Polinomial, Diagnóstico de Resíduos/6 suposições, Regressão Logística,
+  Passo 0/taxonomia) -- tópicos 7-14 do syllabus (Árvores, KNN, Random
+  Forest, SVM, Clustering) não têm código no app ainda, então ficam fora.
+
+### Critérios de aceite (v11)
+
+- `pytest` continua passando.
+- App abre sem traceback com a aba nova como padrão, nos dois Tipos de
+  Tarefa, testado com `streamlit.testing.v1.AppTest`.
+- Todo o código mostrado é executável (copiado de `core.py` real via
+  `inspect.getsource`, ou testado manualmente no caso dos scripts de cola).
+
+## Requisitos funcionais (v12 — Ingestão de Aula5/`correcao_AC1`, Aula6 e Aula7 + reprioridade do backlog)
+
+Motivo: o Lucas adicionou pastas de aula novas (`Aula6`, `Aula7`) direto na
+raiz de `ML/` (fora do `Estudo_1`) e pediu uma varredura completa de todas as
+pastas de aula contra o que já está ingerido. A varredura achou 3 focos sem
+revisão (`Aula5/correcao_AC1`, `Aula6`, `Aula7`) e a entrega própria da AC1
+(`ativ1`, fora do fluxo de aula). Os arquivos foram copiados para `aulas/`
+(`aulas/correcoes/` para scripts de correção do professor, `aulas/ac1_lucas/`
+para a entrega própria). O Lucas também decidiu a regra de priorização
+registrada acima: conteúdo já apresentado em aula (mesmo fora do syllabus
+original) passa à frente de tópicos do syllabus ainda não apresentados.
+
+### Leitura dos arquivos novos
+
+| Arquivo | O que é | Ação |
+|---|---|---|
+| `correcoes/gabarito_prova_T1_exercicio1.py` (`Ecommerce Customers.csv`, ausente) | **Rótulo corrigido (feedback do Lucas, 2026-09-16):** não é correção da AC1 -- é o **gabarito da prova prática T1** (sala T1, canal V5), a primeira avaliação formal do semestre. As mesmas 6 suposições da regressão (linearidade, média dos resíduos, homocedasticidade, normalidade, independência, colinearidade), com `StandardScaler` aplicado a X | Revisado — **nenhuma técnica nova** (mesmos testes da v9); dataset ausente, não dá para reproduzir os números |
+| `correcoes/gabarito_prova_T1_exercicio2.py` (`weatherHistory.csv`, ausente) | Mesmo roteiro do exercicio1, mesma prova T1, dataset diferente | Revisado — mesma conclusão |
+| `exemplo_regr_polinomial.py` (`brazil_covid19.csv`, presente) | Regressão polinomial em série temporal (casos de COVID) — usa `Pipeline(PolynomialFeatures, LinearRegression)` **dentro de um `GridSearchCV`** (`cv=5`, `scoring='neg_mean_squared_error'`, testando grau 1 a 6) para **escolher o grau automaticamente** | **Gap real** (ver abaixo) |
+| `correcoes/correcao_polinomial_p1.py` (`Ice Cream.csv`, ausente), `correcoes/correcao_polinomial_p2.py` (dataset não identificado, ausente) | Mesma técnica (`Pipeline` + `GridSearchCV` sobre `poly__degree: [1..6]`), uma versão simples e uma multivariada | Revisado — confirma que o `GridSearchCV` é o padrão do professor, não uma escolha isolada de um script só |
+| `exemplo_regularizacao.py` (`diabetes.csv`, presente) | Regressão Múltipla com `StandardScaler` + comparação `LinearRegression` vs. **Ridge**, **Lasso** e **ElasticNet**, cada um com `GridSearchCV` (`cv=10`, `scoring='neg_mean_squared_error'`) para achar o melhor `alpha` (e `l1_ratio` no ElasticNet); também usa `cross_val_score` para a Múltipla sem regularização | **Gap real, algoritmo novo** (ver abaixo) |
+| `correcoes/correcao_Hitters.py` (`Hitters.csv`, ausente) | Mesmo roteiro (Ridge/Lasso/ElasticNet via `GridSearchCV`), dataset de beisebol com variáveis dummy (`League`/`Division`/`NewLeague`) | Revisado — confirma metodologia, sem técnica adicional além do `exemplo_regularizacao.py` |
+| `diabetes.csv`, `diabetes_nao_escalonado.csv` | Datasets do exemplo de Regularização — versão escalonada (a usada no treino) e não-escalonada (usada só para escalonar novos dados na predição, com uma fórmula de padronização manual — nota do próprio script diz que é específica desse dataset) | **Dataset novo** — integrar junto com o bolt de Regularização |
+| `Regularizacao_20252.pdf`, `RegressaoPolinomial_20252.pdf` | Slides das duas aulas | Fonte teórica para as abas Teoria/Passo 0 quando os bolts forem implementados |
+| `ac1_lucas/AC1_Codigos_LucasQuadros_*.py` + datasets | Entrega própria do Lucas na AC1 (Pacientes COVID, Plano de Saúde) — **não é material do professor** | Revisado, sem ação automática — ver pergunta de validação abaixo |
+
+### Gap 1: Regressão Polinomial — grau escolhido manualmente vs. `GridSearchCV`
+
+Hoje (`app.py`, modo Polinomial) o aluno escolhe o grau (2 a 5) num slider.
+Nos 3 scripts de aula que usam Polinomial (`exemplo_regr_polinomial.py`,
+`correcao_polinomial_p1.py`, `correcao_polinomial_p2.py`), o grau **nunca**
+é escolhido manualmente — sempre via `GridSearchCV` sobre um `Pipeline`,
+testando grau 1-6 e escolhendo o de menor MSE (validação cruzada). É a
+mesma lógica que o app já usa no leaderboard de Múltipla (Bolt 36, busca
+exaustiva) — só que para grau, não para conjunto de variáveis.
+
+### Gap 2: Regularização — algoritmo/técnicas totalmente ausentes de `core.py`
+
+Nenhuma das seguintes peças existe hoje no app: `Ridge`, `Lasso`,
+`ElasticNet`, `StandardScaler`, `GridSearchCV`, `cross_val_score`,
+`neg_mean_squared_error` como critério de seleção. É o primeiro caso do app
+onde escalonar X **importa de verdade** para o resultado (ao contrário da
+OLS pura, documentado como não-afetada em v9) — regularização penaliza o
+tamanho do coeficiente, então a escala de cada variável muda o resultado.
+
+### Riscos / pontos de incerteza (v12)
+
+- **Datasets ausentes:** `Ecommerce Customers.csv`, `weatherHistory.csv`,
+  `Ice Cream.csv`, o dataset do `correcao_polinomial_p2.py` e `Hitters.csv`
+  não existem em nenhuma pasta de `ML/` — só o código foi copiado. Esses 5
+  scripts servem só como **referência de metodologia**, não são
+  reproduzíveis nem viram dataset novo no app.
+- **Discrepância treino x teste nos resíduos:** `gabarito_prova_T1_exercicio1.py`
+  calcula os resíduos das 6 suposições sobre o **conjunto de treino**
+  (`y_train - y_pred_train`); o app (`app.py:1550`,
+  `diagnosticar_residuos(y_teste, predicoes_modelo)`) usa o **conjunto de
+  teste**. Ambos são defensáveis (a v9 já documentou a lógica de usar teste),
+  mas vale registrar a diferença para não achar que é um erro se aparecer de
+  novo em outra correção.
+- **Escalonamento "não-tradicional" do `diabetes.csv`:** o próprio
+  `exemplo_regularizacao.py` avisa que esse dataset foi escalonado de um
+  jeito diferente do `StandardScaler` padrão do scikit-learn (divisão extra
+  por `sqrt(N_train)`) — só para esse dataset; outros exercícios usam
+  `StandardScaler` "tradicional". Se o app vier a reproduzir a predição de
+  novos dados do script, precisa da fórmula específica, não do
+  `StandardScaler` genérico.
+- **`ac1_lucas/`:** são datasets e código **do Lucas**, não do professor —
+  `base_plano_saude_preparada.csv` aqui é **diferente** (`diff` confirma) da
+  versão já integrada em `data/` (que veio do professor, via Aula5). Não
+  deve substituir a versão oficial sem decisão explícita.
+
+### Critérios de aceite (v12 — só desta rodada de Inception, sem Construction ainda)
+
+- `aulas-log.md` reflete todos os arquivos novos (feito, ver tabela abaixo).
+- Roadmap atualizado com a reprioridade combinada (feito, ver tabela do
+  topo) e o item 6b (Regularização).
+- Nenhum código de `core.py`/`app.py` foi alterado nesta rodada — Gap 1 e
+  Gap 2 viram bolts só depois que o Lucas responder as perguntas abaixo,
+  seguindo a regra do AI-DLC de não pular para Construction sem confirmação.
+
+### Decisões validadas com o Lucas (v12, via `AskUserQuestion`)
+
+1. **Gap 1 (Polinomial):** opção extra, não substituição — slider manual
+   continua existindo, com um radio novo ("Manual" / "Automático") para
+   escolher. Implementado nos Bolts 50-52 (ver `BOLTS.md`); checkpoint
+   validado (`pytest` 65/65 + `AppTest` sem exceção nos dois modos).
+2. **Gap 2 (Regularização):** a Inception própria do item 6b começa **depois**
+   de fechar o Gap 1 (feito agora) — próximo passo do projeto, ainda não
+   iniciado.
+3. **`ac1_lucas/`:** fica só como registro em `aulas/` — não vira conteúdo do
+   app, sem bolt de integração.
+4. **Datasets ausentes:** o Lucas pediu para eu checar se os arquivos
+   (`Ecommerce Customers.csv`, `weatherHistory.csv`, `Ice Cream.csv`, dataset
+   do `correcao_polinomial_p2.py`, `Hitters.csv`) estão em alguma pasta de
+   aula que a varredura inicial não tenha pego. Busca ampla refeita
+   (nome exato + palavras-chave + conteúdo de todos os `.zip` de `ML/`):
+   **confirmado, não existem em nenhum lugar do diretório `ML/`** (nem
+   soltos, nem dentro de `entrega_pacientes_covid.zip`,
+   `entrega_plano_saude.zip` ou `drive-download-...zip`). Os 5 scripts que
+   os usam continuam como referência de metodologia apenas — se o Lucas
+   encontrar os arquivos em outro lugar (Drive, Moodle), é só adicionar a
+   `aulas/` que a próxima varredura pega.
+
+## Requisitos funcionais (v13 — Regularização: Ridge/Lasso/ElasticNet, item 6b do roadmap)
+
+Motivo: fechado o Gap 1 (Polinomial) na v12, o Lucas pediu para começar a
+Inception do item **6b** do roadmap — Regularização — a próxima peça
+priorizada à frente dos tópicos 7-14 (ainda não apresentados em aula).
+
+### Visão
+
+Regularização não é um algoritmo do zero -- é a Regressão Múltipla (que o
+app já tem) com um termo de penalidade sobre o tamanho dos coeficientes.
+Os dois scripts de aula lidos na v12 (`exemplo_regularizacao.py`,
+`diabetes.csv`; `correcao_Hitters.py`, `Hitters.csv` ausente) seguem o mesmo
+roteiro:
+
+1. Treinar `LinearRegression` "normal" com todas as variáveis (X já vem
+   escalonado com `StandardScaler` no `diabetes.csv` de aula) e olhar os
+   coeficientes -- alguns ficam grandes por causa de multicolinearidade
+   (ex.: `s1`/`s2` correlacionados em 0.896 no diabetes).
+2. Para **Ridge**, **Lasso** e **ElasticNet**: usar `GridSearchCV` (`cv=10`,
+   `scoring='neg_mean_squared_error'`) para achar o melhor `alpha` (e
+   `l1_ratio` no ElasticNet) -- mesmo padrão de "hiperparâmetro escolhido
+   por validação cruzada" que o Gap 1 do Polinomial acabou de implementar em
+   `escolher_grau_polinomial_cv()`.
+3. Comparar os coeficientes dos 3 modelos num gráfico único -- Ridge encolhe
+   todos em direção a zero sem zerar; Lasso zera alguns (seleção de
+   variável implícita); ElasticNet fica entre os dois (`l1_ratio` controla
+   a mistura).
+4. (Só no `exemplo_regularizacao.py`) Prever valores novos com o melhor
+   modelo (Lasso, `alpha=0.06`), escalonando os dados novos com uma fórmula
+   manual específica desse dataset (ver risco abaixo).
+
+### Decisão de escopo (validada com o Lucas antes das perguntas abaixo)
+
+Regularização não é um algoritmo à parte -- é um modificador (penalidade
+sobre o tamanho dos coeficientes) que em tese poderia ser acoplado a
+qualquer modelo linear: Múltipla, Polinomial (comum na prática, para conter
+overfitting de grau alto) e até Logística (o `sklearn.linear_model.
+LogisticRegression` já aplica L2 por padrão, nunca exposto ao aluno). Mas
+**nenhum dos 2 scripts de aula lidos** (`exemplo_regularizacao.py` com
+`diabetes.csv`, `correcao_Hitters.py` com `Hitters.csv`) combina
+regularização com expansão polinomial ou com classificação -- os dois
+aplicam Ridge/Lasso/ElasticNet só sobre X multivariado "cru" (Múltipla).
+**Decisão:** esta rodada cobre só **Múltipla + Regularização**, para não
+extrapolar além do que foi apresentado em aula (mesma regra de priorização
+da v12). Polinomial+Regularização e penalidade na Logística ficam anotados
+como possível expansão futura, sem virar requisito agora.
+
+### Requisitos funcionais (rascunho, sujeito às perguntas de validação)
+
+- [ ] `core.py`: funções para treinar Ridge/Lasso/ElasticNet com `alpha`
+      escolhido por `GridSearchCV` (`cv`, `neg_mean_squared_error`),
+      reaproveitando o padrão já criado em `escolher_grau_polinomial_cv()`.
+- [ ] `StandardScaler` entra no pipeline -- primeira vez que o app escalona
+      X antes de treinar (documentado desde a v9 que **não** era necessário
+      para OLS puro; aqui **é**, porque a penalidade depende da escala).
+- [ ] UI: encaixar Regularização em algum lugar do seletor "Tipo de
+      Regressão" (ver pergunta 1 abaixo).
+- [ ] Mostrar comparação de coeficientes (com/sem regularização) -- gráfico
+      ou tabela, replicando a ideia do `comparing_models` do script de aula.
+- [ ] Dataset `diabetes.csv` integrado a `data/` (10 variáveis numéricas já
+      escalonadas, 442 linhas, alvo `diabetes_measure` contínuo).
+
+### Riscos / pontos de incerteza (v13)
+
+- **Convenção de avaliação diferente do resto do app:** todas as abas hoje
+  usam `train_test_split` + métricas no conjunto de **teste**. O script de
+  Regularização nunca faz esse split -- ele usa `cross_val_score`/
+  `GridSearchCV` (CV) sobre o dataset **inteiro**. Adotar um dos dois jeitos
+  (ou os dois) é decisão de design, não só estética -- ver pergunta 2.
+- **Escalonamento não-tradicional do `diabetes.csv` na Previsão:** o próprio
+  script avisa que esse dataset foi escalonado de um jeito específico (não
+  o `StandardScaler` genérico) para poder desfazer a normalização em dados
+  novos -- fórmula manual com `sqrt(N_train)`. Se o app quiser oferecer
+  "prever novo valor" nesse dataset, precisa dessa fórmula específica, não
+  do `StandardScaler` padrão do scikit-learn (que não é diretamente
+  invertível para o `diabetes.csv` da forma como ele já vem pré-escalonado).
+- **`Hitters.csv` ausente:** `correcao_Hitters.py` usa variáveis dummy
+  (`League`/`Division`/`NewLeague`) além de Ridge/Lasso/ElasticNet -- só
+  serve como confirmação de metodologia, sem dataset para integrar.
+- **Múltiplos hiperparâmetros no ElasticNet:** `alpha` e `l1_ratio` juntos --
+  o `GridSearchCV` já lida bem (grade 2D), mas a exibição na UI precisa
+  deixar claro que são 2 valores escolhidos, não 1.
+
+### Opções levantadas (para `AskUserQuestion`)
+
+**1. Onde entra na UI** (já restrito a Múltipla + Regularização, ver
+"Decisão de escopo" acima):
+- **A -- Novo modo em "Tipo de Regressão"**: "Regularização (Ridge/Lasso/
+  ElasticNet)" ao lado de Simples/Múltipla/Polinomial, com sua própria
+  seleção de variáveis X (igual à Múltipla). Consistente com o padrão já
+  usado para Polinomial/Logística, mas duplica a lógica de seleção de X que
+  a Múltipla já tem.
+- **B -- Toggle dentro do modo Múltipla existente**: aparece quando 2+
+  variáveis X estão escolhidas ("Regularizar? Nenhuma/Ridge/Lasso/
+  ElasticNet"). Reaproveita a seleção de X já existente e deixa explícito
+  que é a mesma Múltipla, só com penalidade -- mas mistura dois conceitos
+  na mesma aba/leaderboard.
+
+**2. Convenção de avaliação:**
+- **A -- Padrão do app**: `train_test_split` (como todo o resto),
+  `GridSearchCV`/`cross_val_score` rodando só dentro do treino, métricas
+  finais (R²/MAE/MSE/RMSE) no teste -- mais consistente com as outras abas,
+  mas diverge do script do professor.
+- **B -- Padrão do script de aula**: sem split explícito, `GridSearchCV`
+  direto no dataset inteiro, métrica reportada é o `neg_mean_squared_error`
+  médio de CV -- bate exatamente com os números que aparecem no script
+  (ex.: -2986,37 para o Lasso no diabetes), mas foge do padrão do resto do
+  app.
+
+**3. Quais modelos expor:**
+- **A -- Os 3 juntos, comparados** (Ridge + Lasso + ElasticNet + "sem
+  regularização"), igual ao gráfico do script -- mais fiel à aula, mais
+  trabalho de UI.
+- **B -- Um de cada vez**, escolhido num seletor -- mais simples, menos
+  imediato para comparar.
+
+**4. Dataset `diabetes.csv`:**
+- **A -- Integrar agora**, com "Previsão" desabilitada/com aviso (por causa
+  do escalonamento não-padrão) até decidir a fórmula.
+- **B -- Integrar agora com a fórmula específica implementada**, replicando
+  a Previsão também.
+- **C -- Adiar a integração do dataset**, focar só no algoritmo primeiro
+  (usar outro dataset já existente, ex. `50_Startups` ou `saude_desenvolvimento`,
+  para os quais X multivariado já está pronto e escalonar é direto).
+
+### Decisões validadas com o Lucas (v13, parcial)
+
+- **Pergunta 1 (UI):** toggle dentro do modo Múltipla existente (opção B) --
+  não vira um "Tipo de Regressão" à parte.
+- **Pergunta 2 (avaliação):** padrão do script de aula -- CV puro
+  (`GridSearchCV`/`cross_val_score`, `cv=10`, sem `train_test_split`
+  explícito). Validado com o Lucas o porquê: `cross_val_score`/
+  `GridSearchCV` já fazem split internamente (k-fold, 10 rodadas treino/
+  teste em vez de uma só) -- não é ausência de validação, é validação
+  cruzada em vez de split único. A ressalva registrada: escolher o `alpha`
+  (e `l1_ratio`) pelo mesmo `neg_mean_squared_error` de CV que depois anuncia
+  o "vencedor" entre Ridge/Lasso/ElasticNet tem um viés de seleção sutil
+  (uma CV aninhada eliminaria isso, mas foge do que o script faz) -- decisão
+  consciente de seguir fiel ao script mesmo com essa limitação conhecida.
+
+### Decisões validadas com o Lucas (v13, fechamento)
+
+- **Pergunta 3 (modelos expostos):** os 3 juntos, comparados (Sem
+  regularização + Ridge + Lasso + ElasticNet), igual ao gráfico do script.
+- **Pergunta 4 (dataset):** não integrar `diabetes.csv` agora (escalonamento
+  não-padrão complica demais a Previsão). Em vez disso, usar
+  `mortalidade_infantil_desenvolvimento.csv` (já em `data/`) -- tem
+  colinearidade real entre X (`Saneamento_pct` x `Agua_Potavel_pct`,
+  r≈0.906, quase idêntico ao par `s1`/`s2` do diabetes, r≈0.896), já citado
+  desde a v7 do README como bom exemplo de colinearidade. Reproduz a mesma
+  lição pedagógica sem a complicação do escalonamento.
+- **Decisão de arquitetura (não perguntada, mas registrada):** o toggle de
+  Regularização é **puramente aditivo** -- só adiciona uma seção nova na
+  aba Treinamento (tabela + gráfico comparativo), computada via CV no
+  dataset completo. As abas Avaliação, Previsão, Diagnóstico dos Resíduos e
+  Comparação **não mudam** -- continuam usando a Múltipla "padrão" (sem
+  regularização) com o split treino/teste de sempre. Isso evita reescrever
+  o pipeline compartilhado do app (que assume um único split usado por
+  todas as abas) só para acomodar uma convenção de avaliação diferente
+  (CV puro) usada só neste recurso -- e fica explícito na UI (texto da
+  seção) para não confundir o Lucas.
+
+### Critérios de aceite (v13)
+
+- `pytest` continua passando (68 casos, 3 novos para `treinar_regularizacao_cv`).
+- Toggle "4b. Regularizar?" aparece só no modo Múltipla; "Comparar Ridge /
+  Lasso / ElasticNet" mostra tabela (score CV + hiperparâmetros) e gráfico
+  de coeficientes sem gerar exceção (`streamlit.testing.v1.AppTest`).
+- No dataset "👶 Mortalidade Infantil & Desenvolvimento" com X =
+  `Saneamento_pct` + `Agua_Potavel_pct` + `PIB_per_capita`: Ridge/ElasticNet
+  reduzem a diferença entre os coeficientes das duas variáveis colineares
+  em relação à OLS sem regularização (redistribuem peso em vez de uma
+  dominar a outra) -- confirmado manualmente.
+- Abas Avaliação/Previsão/Diagnóstico/Comparação continuam idênticas ao
+  comportamento anterior à v13 (nenhuma mudança de código nelas).
+
+### Revisão pós-checkpoint (mesma rodada v13): feedback do Lucas ao testar
+
+Depois do checkpoint acima, o Lucas testou o app e trouxe 3 observações que
+expuseram um problema real de arquitetura, não só de UI:
+
+1. Regularização só aparecia na aba Treinamento.
+2. Não tinha controle manual de `alpha`/`l1_ratio` (só automático).
+3. **O mais importante:** a tabela comparava os 4 modelos com CV pura no
+   dataset inteiro, enquanto a Múltipla "oficial" (Avaliação) usa R²/MAE/
+   MSE/RMSE no conjunto de teste -- métricas diferentes, partições
+   diferentes (a CV da Regularização incluía linhas que na Múltipla estavam
+   reservadas como teste). **Não dava pra responder "estou ganhando ao
+   regularizar?" de forma confiável.**
+
+**Decisão revista:** abandonar a convenção "CV pura" (decidida antes) em
+favor de **GridSearchCV rodando só dentro de `X_treinamento`** (mesmo
+padrão já usado em `escolher_grau_polinomial_cv`), com os 4 modelos
+avaliados no mesmo `X_teste`/`y_teste` da Múltipla oficial, usando
+`avaliar_modelo()` (R²/MAE/MSE/RMSE) -- diretamente comparável. Essa troca é
+também metodologicamente melhor: resolve o viés de seleção que a v13
+original já tinha identificado como limitação conhecida do método do
+professor. Controle manual dos parâmetros ficou fora desta rodada (decisão
+do Lucas). Exibição: tabela de hiperparâmetros + gráfico de coeficientes na
+aba Treinamento; tabela de métricas (destacando o melhor R²) na aba
+Avaliação, ao lado dos números da Múltipla oficial; e Ridge/Lasso/ElasticNet
+ganharam linhas no leaderboard da Comparação (com **todas** as colunas
+candidatas, não o melhor subconjunto -- a própria penalidade já seleciona
+variável).
+
+**Confirmado no navegador** (dataset "Mortalidade Infantil", X =
+`Saneamento_pct`+`Agua_Potavel_pct`+`PIB_per_capita`, `test_size=0.3`,
+`random_state=0`): "Sem regularização" bate exatamente com a Múltipla
+oficial (R²=0.6973 nos dois lugares) e Ridge supera os dois (R²=0.7010) --
+um ganho real e visível, exatamente o que o Lucas queria enxergar.
+
+## Requisitos funcionais (v14 — Aba "Revisão da Prova" cresce para "Revisão da Prova Parcial")
+
+Motivo: correção de rótulo importante (ver acima) revelou que
+`gabarito_prova_T1_exercicio1/2.py` são o gabarito da **prova T1** (a
+primeira avaliação formal do semestre), não uma correção de atividade. O
+Lucas vai ter agora a **Prova Parcial** -- cumulativa desde a T1, com peso
+maior, cobrindo tudo até aqui **mais** o que ainda for apresentado em aula
+antes da prova. Pediu uma página de estudo, no mesmo espírito da aba
+"🎓 Revisão da Prova" (criada na v11 para a T1), com foco em deixar claro o
+entendimento do pipeline (é prova prática).
+
+### Decisões validadas com o Lucas (via `AskUserQuestion`)
+
+- **Extender vs. nova aba:** a aba "🎓 Revisão da Prova" já era desenhada
+  como página cumulativa ("cobre só os tópicos já implementados") -- só
+  faltava Polinomial automático e Regularização (adicionados depois da T1).
+  Decisão: **fazer crescer a mesma aba** em vez de duplicar conteúdo numa
+  aba nova -- uma só fonte de verdade, que continua servindo pra qualquer
+  prova futura também.
+- **Visão comparativa dos pipelines:** o Lucas quis uma seção nova,
+  específica, comparando os 5 algoritmos lado a lado (o que muda/repete em
+  cada etapa) -- além das seções por algoritmo que já existiam.
+
+### Implementado
+
+- Título/intro atualizados: "🎓 Revisão da Prova Parcial", explicando que é
+  cumulativa (T1 + Polinomial automático + Regularização).
+- **6️⃣ Regressão Polinomial -- grau automático (GridSearchCV):** script de
+  cola + `ver_codigo(escolher_grau_polinomial_cv)`.
+- **7️⃣ Regularização -- Ridge/Lasso/ElasticNet:** script de cola (escalona
+  X, `GridSearchCV` pros 3 modelos) + `ver_codigo(treinar_regularizacao_cv)`.
+- **🔀 Comparação lado a lado dos pipelines:** tabela nova
+  (`TABELA_COMPARATIVA_PIPELINES`) cruzando 6 etapas (nº de variáveis,
+  escalonamento, hiperparâmetro via CV, classe do scikit-learn, métrica de
+  avaliação, suposições, pegadinha comum) x 5 algoritmos.
+- Checklist geral do pipeline: passo 4b (escalonar X, só Regularização) e
+  nota sobre `GridSearchCV` dentro do treino no passo 5.
+- Tabela de gabarito (`REFERENCIA_DATASETS`): 2 linhas novas --
+  `comissao.csv` (Simples x Polinomial grau 2) e Mortalidade Infantil com
+  Regularização (R² 0.6961 → 0.7010 com Ridge).
+
+### Critérios de aceite (v14)
+
+- `pytest` continua passando (70 casos, sem mudança de lógica em `core.py`).
+- Aba renderiza sem erro (`streamlit.testing.v1.AppTest`), com as 4 novas
+  seções presentes (6️⃣, 7️⃣, comparação, gabarito atualizado).
 
 ## Perguntas de validação
 

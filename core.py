@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.stats.api as sms
 from scipy import stats
-from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, LogisticRegression, Ridge
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -30,9 +30,9 @@ from sklearn.metrics import (
     r2_score,
     recall_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 
 
 class DadosInvalidosError(ValueError):
@@ -265,6 +265,133 @@ def treinar_modelo_regressao_polinomial(X_treinamento, y_treinamento, grau):
     return modelo_regressao_polinomial, intercepto, coeficientes
 
 
+def escolher_grau_polinomial_cv(X_treinamento, y_treinamento, graus=range(1, 7), cv=5):
+    """Escolhe o grau do polinômio automaticamente por validação cruzada,
+    igual ao método usado nos scripts de aula (`exemplo_regr_polinomial.py`,
+    `correcao_polinomial_p1.py`/`p2.py`, Aula6): um `GridSearchCV` testa cada
+    grau candidato dentro do mesmo `Pipeline(PolynomialFeatures,
+    LinearRegression)` do modo manual, pontuado por MSE negativo médio em
+    `cv` dobras, e escolhe o grau de maior `neg_mean_squared_error` (ou seja,
+    menor erro).
+
+    Devolve o grau escolhido, o pipeline já treinado com esse grau (nos
+    dados passados) e uma `pd.Series` (grau -> neg_MSE médio) para mostrar
+    na UI como a aula mostra o resultado do `GridSearchCV`."""
+    n_linhas = len(X_treinamento)
+    if n_linhas < cv:
+        raise DadosInvalidosError(
+            f"Poucos dados para validação cruzada com cv={cv}: são "
+            f"necessárias pelo menos {cv} linhas de treino, há {n_linhas}."
+        )
+
+    pipeline = Pipeline(
+        [
+            ("polinomio", PolynomialFeatures(include_bias=False)),
+            ("regressao_linear", LinearRegression()),
+        ]
+    )
+    grid = GridSearchCV(
+        pipeline,
+        {"polinomio__degree": list(graus)},
+        scoring="neg_mean_squared_error",
+        cv=cv,
+    )
+    grid.fit(X_treinamento, y_treinamento)
+
+    grau_escolhido = grid.best_params_["polinomio__degree"]
+    tabela_scores = pd.Series(
+        grid.cv_results_["mean_test_score"],
+        index=list(graus),
+        name="neg_mean_squared_error_medio",
+    )
+    return grau_escolhido, grid.best_estimator_, tabela_scores
+
+
+_ALPHAS_PADRAO = [0.001, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 1, 2, 3, 5, 8, 10, 20, 50, 100]
+_L1_RATIOS_PADRAO = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1]
+
+
+def treinar_regularizacao_cv(
+    X_treinamento, y_treinamento, X_teste, y_teste, cv=10, alphas=_ALPHAS_PADRAO, l1_ratios=_L1_RATIOS_PADRAO
+):
+    """Compara Regressão Múltipla sem regularização com Ridge, Lasso e
+    ElasticNet, no mesmo split treino/teste usado pelo resto do app (ao
+    contrário do script de aula -- `exemplo_regularizacao.py`,
+    `correcao_Hitters.py`, Aula7 -- que nunca separa treino/teste; decisão
+    revista após o Lucas notar que isso impedia comparar de forma justa com
+    a Múltipla "oficial" do app, que já usa split):
+
+    - X é escalonado com `StandardScaler`, ajustado só no TREINO (evita
+      vazamento de dados do teste) -- ao contrário da OLS pura, a penalidade
+      de Ridge/Lasso/ElasticNet depende da escala de cada variável.
+    - O `alpha` (Ridge/Lasso) e `alpha`+`l1_ratio` (ElasticNet) são
+      escolhidos por `GridSearchCV` (`cv` dobras, `neg_mean_squared_error`)
+      rodando **só dentro do treino** -- mesmo padrão já usado em
+      `escolher_grau_polinomial_cv()` para o grau do polinômio.
+    - Os 4 modelos são então avaliados no mesmo `X_teste`/`y_teste`, com as
+      mesmas métricas (R², MAE, MSE, RMSE) já usadas em `avaliar_modelo()`
+      -- comparável diretamente com a Múltipla "oficial" mostrada na aba
+      Avaliação (o modelo "Sem regularização" aqui deve bater com ela, já
+      que escalonar X não muda R²/MAE/MSE/RMSE de uma OLS pura).
+
+    Devolve um dicionário {nome_do_modelo: {"modelo", "coeficientes"
+    (pd.Series indexada pelas colunas de X, nos dados ESCALONADOS), "r2",
+    "mae", "mse", "rmse", "hiperparametros" (dict, vazio para "Sem
+    regularização")}}, na ordem Sem regularização -> Ridge -> Lasso ->
+    ElasticNet -- pronto para montar tabela/gráfico comparativo na UI."""
+    n_linhas_treino = len(X_treinamento)
+    if n_linhas_treino < cv:
+        raise DadosInvalidosError(
+            f"Poucos dados de treino para validação cruzada com cv={cv}: são "
+            f"necessárias pelo menos {cv} linhas, há {n_linhas_treino}."
+        )
+
+    colunas = X_treinamento.columns
+    escalonador = StandardScaler().fit(X_treinamento)
+    X_treinamento_escalonado = escalonador.transform(X_treinamento)
+    X_teste_escalonado = escalonador.transform(X_teste)
+
+    def _avaliar(modelo, hiperparametros):
+        _, r2, mae, mse, rmse = avaliar_modelo(modelo, X_teste_escalonado, y_teste)
+        return {
+            "modelo": modelo,
+            "coeficientes": pd.Series(modelo.coef_, index=colunas),
+            "r2": r2,
+            "mae": mae,
+            "mse": mse,
+            "rmse": rmse,
+            "hiperparametros": hiperparametros,
+        }
+
+    resultados = {}
+
+    sem_regularizacao = LinearRegression().fit(X_treinamento_escalonado, y_treinamento)
+    resultados["Sem regularização"] = _avaliar(sem_regularizacao, {})
+
+    grid_ridge = GridSearchCV(
+        Ridge(), {"alpha": list(alphas)}, scoring="neg_mean_squared_error", cv=cv
+    )
+    grid_ridge.fit(X_treinamento_escalonado, y_treinamento)
+    resultados["Ridge"] = _avaliar(grid_ridge.best_estimator_, grid_ridge.best_params_)
+
+    grid_lasso = GridSearchCV(
+        Lasso(), {"alpha": list(alphas)}, scoring="neg_mean_squared_error", cv=cv
+    )
+    grid_lasso.fit(X_treinamento_escalonado, y_treinamento)
+    resultados["Lasso"] = _avaliar(grid_lasso.best_estimator_, grid_lasso.best_params_)
+
+    grid_elastic = GridSearchCV(
+        ElasticNet(),
+        {"alpha": list(alphas), "l1_ratio": list(l1_ratios)},
+        scoring="neg_mean_squared_error",
+        cv=cv,
+    )
+    grid_elastic.fit(X_treinamento_escalonado, y_treinamento)
+    resultados["ElasticNet"] = _avaliar(grid_elastic.best_estimator_, grid_elastic.best_params_)
+
+    return resultados
+
+
 def calcular_coeficientes_na_mao(x, y):
     """Cálculo MANUAL de beta0 e beta1, pela fórmula do slide:
 
@@ -288,12 +415,13 @@ def calcular_coeficientes_na_mao(x, y):
 # ============================================================================
 
 def avaliar_modelo(modelo, X_teste, y_teste):
-    """R-quadrado, MAE (erro médio absoluto) e MSE (erro médio quadrático)."""
+    """R-quadrado, MAE (erro médio absoluto), MSE e RMSE (erro médio quadrático e sua raiz)."""
     predicoes_modelo = modelo.predict(X_teste)
     r2 = r2_score(y_teste, predicoes_modelo)
     mae = mean_absolute_error(y_teste, predicoes_modelo)
     mse = mean_squared_error(y_teste, predicoes_modelo)
-    return predicoes_modelo, r2, mae, mse
+    rmse = np.sqrt(mse)
+    return predicoes_modelo, r2, mae, mse, rmse
 
 
 def selecionar_melhor_subconjunto_multipla(df, cols_x_candidatas, col_y, test_size, random_state, tamanho_minimo=2):
@@ -307,7 +435,7 @@ def selecionar_melhor_subconjunto_multipla(df, cols_x_candidatas, col_y, test_si
     Nenhum dataset do app tem mais de ~5 colunas X candidatas, então a
     busca exaustiva (no máximo 2^N combinações) é instantânea.
 
-    Devolve (colunas_escolhidas, modelo, r2, mae, mse)."""
+    Devolve (colunas_escolhidas, modelo, r2, mae, mse, rmse)."""
     if len(cols_x_candidatas) < tamanho_minimo:
         raise DadosInvalidosError(
             f"É preciso pelo menos {tamanho_minimo} colunas numéricas candidatas "
@@ -324,9 +452,9 @@ def selecionar_melhor_subconjunto_multipla(df, cols_x_candidatas, col_y, test_si
                 X, y, test_size=test_size, random_state=random_state
             )
             modelo, _, _ = treinar_modelo_regressao_multipla(X_treinamento, y_treinamento)
-            _, r2, mae, mse = avaliar_modelo(modelo, X_teste, y_teste)
+            _, r2, mae, mse, rmse = avaliar_modelo(modelo, X_teste, y_teste)
             if melhor is None or r2 > melhor[2]:
-                melhor = (cols, modelo, r2, mae, mse)
+                melhor = (cols, modelo, r2, mae, mse, rmse)
 
     return melhor
 

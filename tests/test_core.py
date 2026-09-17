@@ -36,6 +36,15 @@ def df_distancia_consumo():
     return core.carregar_dataset(os.path.join(DATA_DIR, "distancia_consumo.csv"))
 
 
+@pytest.fixture
+def df_mortalidade_infantil():
+    """Dataset com colinearidade real entre X (Saneamento_pct x
+    Agua_Potavel_pct, r~0.906) -- usado para testar Regularização porque
+    reproduz a mesma situação do diabetes.csv do script de aula (s1/s2,
+    r~0.896), sem precisar do escalonamento não-padrão daquele dataset."""
+    return core.carregar_dataset(os.path.join(DATA_DIR, "mortalidade_infantil_desenvolvimento.csv"))
+
+
 # ============================================================================
 # 1) Cálculo manual == scikit-learn (a "caixa-preta" foi aberta com sucesso)
 # ============================================================================
@@ -73,11 +82,22 @@ def test_avaliar_modelo_com_predicao_perfeita_da_r2_igual_a_1():
     y = pd.Series([2, 4, 6, 8, 10])
 
     modelo, _, _ = core.treinar_modelo_regressao_simples(X, y)
-    _, r2, mae, mse = core.avaliar_modelo(modelo, X, y)
+    _, r2, mae, mse, rmse = core.avaliar_modelo(modelo, X, y)
 
     assert r2 == pytest.approx(1.0, abs=1e-9)
     assert mae == pytest.approx(0.0, abs=1e-9)
     assert mse == pytest.approx(0.0, abs=1e-9)
+    assert rmse == pytest.approx(0.0, abs=1e-9)
+
+
+def test_avaliar_modelo_rmse_e_a_raiz_do_mse():
+    X = pd.DataFrame({"x": [1, 2, 3, 4, 5]})
+    y = pd.Series([2, 5, 6, 7, 11])
+
+    modelo, _, _ = core.treinar_modelo_regressao_simples(X, y)
+    _, _, _, mse, rmse = core.avaliar_modelo(modelo, X, y)
+
+    assert rmse == pytest.approx(np.sqrt(mse))
 
 
 def test_prever_novo_valor_usa_a_equacao_da_reta():
@@ -271,7 +291,7 @@ def test_treinar_modelo_multiplo_devolve_um_coeficiente_por_coluna(df_usa_housin
 
     # avaliar_modelo (genérico) e prever_novo_valor_multiplo devem funcionar
     # normalmente com um modelo de múltiplas variáveis.
-    _, r2, mae, mse = core.avaliar_modelo(modelo, X_teste, y_teste)
+    _, r2, mae, mse, rmse = core.avaliar_modelo(modelo, X_teste, y_teste)
     assert 0.0 <= r2 <= 1.0
     assert mae >= 0.0
     assert mse >= 0.0
@@ -294,7 +314,7 @@ def test_regressao_multipla_bate_com_r2_do_script_de_aula_50_startups():
     X, y = df_limpo[cols_x], df_limpo[col_y]
     X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
     modelo, _, _ = core.treinar_modelo_regressao_multipla(X_tr, y_tr)
-    _, r2, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
+    _, r2, _, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
 
     assert r2 == pytest.approx(0.9431, abs=1e-3)
 
@@ -310,7 +330,7 @@ def test_melhor_subconjunto_multipla_descarta_variavel_de_baixa_correlacao_50_st
     candidatas = ["R&D Spend", "Administration", "Marketing Spend"]
     col_y = "Profit"
 
-    cols_escolhidas, _, r2, _, _ = core.selecionar_melhor_subconjunto_multipla(
+    cols_escolhidas, _, r2, _, _, _ = core.selecionar_melhor_subconjunto_multipla(
         df, candidatas, col_y, test_size=0.3, random_state=0
     )
 
@@ -335,7 +355,7 @@ def test_regressao_multipla_explica_pelo_menos_tanto_quanto_a_melhor_simples(df_
     X, y = df_limpo[cols_x], df_limpo[col_y]
     X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
     modelo_multiplo, _, _ = core.treinar_modelo_regressao_multipla(X_tr, y_tr)
-    _, r2_multiplo, _, _ = core.avaliar_modelo(modelo_multiplo, X_te, y_te)
+    _, r2_multiplo, _, _, _ = core.avaliar_modelo(modelo_multiplo, X_te, y_te)
 
     melhor_r2_simples = 0.0
     for col_x in cols_x:
@@ -344,7 +364,7 @@ def test_regressao_multipla_explica_pelo_menos_tanto_quanto_a_melhor_simples(df_
             df_s[[col_x]], df_s[col_y], test_size=0.3, random_state=0
         )
         modelo_simples, _, _ = core.treinar_modelo_regressao_simples(X_s_tr, y_s_tr)
-        _, r2_simples, _, _ = core.avaliar_modelo(modelo_simples, X_s_te, y_s_te)
+        _, r2_simples, _, _, _ = core.avaliar_modelo(modelo_simples, X_s_te, y_s_te)
         melhor_r2_simples = max(melhor_r2_simples, r2_simples)
 
     assert r2_multiplo >= melhor_r2_simples - 1e-9
@@ -396,7 +416,7 @@ def test_diagnostico_de_residuos_no_fluxo_completo(df_distancia_consumo):
     y = df_distancia_consumo["Consumo"]
     X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
     modelo, _, _ = core.treinar_modelo_regressao_simples(X_tr, y_tr)
-    predicoes, _, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
+    predicoes, _, _, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
 
     diagnostico = core.diagnosticar_residuos(y_te, predicoes)
 
@@ -440,12 +460,138 @@ def test_regressao_polinomial_funciona_com_avaliar_modelo_e_prever_novo_valor(df
 
     modelo, _, _ = core.treinar_modelo_regressao_polinomial(X_tr, y_tr, grau=2)
 
-    _, r2, mae, mse = core.avaliar_modelo(modelo, X_te, y_te)
+    _, r2, mae, mse, rmse = core.avaliar_modelo(modelo, X_te, y_te)
     assert mae >= 0.0
     assert mse >= 0.0
 
     predicao = core.prever_novo_valor(modelo, "Distancia", 50.0)
     assert isinstance(predicao, (int, float, np.floating))
+
+
+def test_escolher_grau_polinomial_cv_acerta_grau_conhecido():
+    """Dados gerados por y = x² sem ruído: o GridSearchCV deve escolher
+    grau 2 (ou próximo, com poucos dados o CV pode empatar), nunca grau 1
+    (reta), que erraria feio uma parábola."""
+    rng = np.random.RandomState(0)
+    x = np.linspace(-10, 10, 60)
+    y = x**2 + rng.normal(scale=0.1, size=len(x))
+    X = pd.DataFrame({"x": x})
+    y = pd.Series(y)
+
+    grau, modelo, tabela_scores = core.escolher_grau_polinomial_cv(X, y, graus=range(1, 5), cv=5)
+
+    assert grau in (2, 3, 4)
+    assert grau != 1
+    assert list(tabela_scores.index) == [1, 2, 3, 4]
+    assert tabela_scores[grau] == tabela_scores.max()
+
+
+def test_escolher_grau_polinomial_cv_pipeline_treinado_funciona_com_avaliar_modelo(df_distancia_consumo):
+    """O pipeline devolvido já vem treinado (fit no X/y completos passados)
+    e deve encaixar sem alteração nas funções genéricas já existentes."""
+    X = df_distancia_consumo[["Distancia"]]
+    y = df_distancia_consumo["Consumo"]
+
+    grau, modelo, _ = core.escolher_grau_polinomial_cv(X, y, cv=3)
+
+    _, r2, mae, mse, rmse = core.avaliar_modelo(modelo, X, y)
+    assert mae >= 0.0
+    assert isinstance(grau, (int, np.integer))
+
+
+def test_escolher_grau_polinomial_cv_reproduz_exemplo_polinomial_comissao():
+    """`exemplo_polinomial.py` (Aula6): dataset construído como uma parábola
+    exata -- GridSearchCV deve escolher grau 2 e o ajuste deve ficar
+    essencialmente perfeito (R² ≈ 1.0), reproduzindo o script de aula."""
+    df = core.carregar_dataset(os.path.join(DATA_DIR, "comissao.csv"))
+    X, y = df[["quantidade"]], df["comissao"]
+    X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
+
+    grau, modelo, _ = core.escolher_grau_polinomial_cv(X_tr, y_tr)
+    _, r2, _, _, rmse = core.avaliar_modelo(modelo, X_te, y_te)
+
+    assert grau == 2
+    assert r2 == pytest.approx(1.0, abs=1e-6)
+    assert rmse < 1e-6
+
+
+def test_escolher_grau_polinomial_cv_poucas_linhas_levanta_erro():
+    X = pd.DataFrame({"x": [1.0, 2.0, 3.0]})
+    y = pd.Series([1.0, 4.0, 9.0])
+
+    with pytest.raises(core.DadosInvalidosError):
+        core.escolher_grau_polinomial_cv(X, y, cv=5)
+
+
+# ============================================================================
+# 8b) Regularização -- Ridge / Lasso / ElasticNet (Inception v13)
+# ============================================================================
+
+def test_treinar_regularizacao_cv_devolve_os_4_modelos_na_ordem(df_mortalidade_infantil):
+    X = df_mortalidade_infantil[["Saneamento_pct", "Agua_Potavel_pct", "PIB_per_capita"]]
+    y = df_mortalidade_infantil["Mortalidade_Infantil"]
+    X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
+
+    resultados = core.treinar_regularizacao_cv(X_tr, y_tr, X_te, y_te, cv=5)
+
+    assert list(resultados.keys()) == ["Sem regularização", "Ridge", "Lasso", "ElasticNet"]
+    for nome, info in resultados.items():
+        assert set(info.keys()) == {"modelo", "coeficientes", "r2", "mae", "mse", "rmse", "hiperparametros"}
+        assert len(info["coeficientes"]) == 3
+        assert info["mae"] >= 0.0
+        assert info["mse"] >= 0.0
+        assert info["rmse"] == pytest.approx(info["mse"] ** 0.5)
+
+    assert resultados["Sem regularização"]["hiperparametros"] == {}
+    assert "alpha" in resultados["Ridge"]["hiperparametros"]
+    assert "alpha" in resultados["Lasso"]["hiperparametros"]
+    assert {"alpha", "l1_ratio"} == set(resultados["ElasticNet"]["hiperparametros"].keys())
+
+
+def test_treinar_regularizacao_cv_sem_regularizacao_bate_com_multipla_sem_escalonar(df_mortalidade_infantil):
+    """Escalonar X não muda R²/MAE/MSE/RMSE de uma OLS pura (mesma
+    conclusão já validada na v9 para o Diagnóstico dos Resíduos) -- então a
+    linha "Sem regularização" (calculada com X escalonado) deve bater com a
+    Múltipla "oficial" do app (calculada sem escalonar), no mesmo split."""
+    X = df_mortalidade_infantil[["Saneamento_pct", "Agua_Potavel_pct", "PIB_per_capita"]]
+    y = df_mortalidade_infantil["Mortalidade_Infantil"]
+    X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
+
+    modelo_oficial, _, _ = core.treinar_modelo_regressao_multipla(X_tr, y_tr)
+    _, r2_oficial, mae_oficial, mse_oficial, rmse_oficial = core.avaliar_modelo(modelo_oficial, X_te, y_te)
+
+    resultados = core.treinar_regularizacao_cv(X_tr, y_tr, X_te, y_te, cv=5)
+    sem_regularizacao = resultados["Sem regularização"]
+
+    assert sem_regularizacao["r2"] == pytest.approx(r2_oficial, abs=1e-8)
+    assert sem_regularizacao["mae"] == pytest.approx(mae_oficial, abs=1e-6)
+    assert sem_regularizacao["mse"] == pytest.approx(mse_oficial, abs=1e-6)
+    assert sem_regularizacao["rmse"] == pytest.approx(rmse_oficial, abs=1e-6)
+
+
+def test_treinar_regularizacao_cv_ridge_encolhe_coeficientes_da_ols(df_mortalidade_infantil):
+    """Com colinearidade real entre X (Saneamento_pct x Agua_Potavel_pct),
+    Ridge deve reduzir a magnitude média dos coeficientes em relação à OLS
+    sem regularização -- é a lição central do script de aula."""
+    X = df_mortalidade_infantil[["Saneamento_pct", "Agua_Potavel_pct", "PIB_per_capita"]]
+    y = df_mortalidade_infantil["Mortalidade_Infantil"]
+    X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
+
+    resultados = core.treinar_regularizacao_cv(X_tr, y_tr, X_te, y_te, cv=5)
+
+    norma_sem_regularizacao = np.abs(resultados["Sem regularização"]["coeficientes"]).sum()
+    norma_ridge = np.abs(resultados["Ridge"]["coeficientes"]).sum()
+    assert norma_ridge <= norma_sem_regularizacao
+
+
+def test_treinar_regularizacao_cv_poucas_linhas_de_treino_levanta_erro():
+    X_tr = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": [2.0, 1.0, 4.0]})
+    y_tr = pd.Series([1.0, 4.0, 9.0])
+    X_te = pd.DataFrame({"a": [1.5], "b": [2.5]})
+    y_te = pd.Series([2.0])
+
+    with pytest.raises(core.DadosInvalidosError):
+        core.treinar_regularizacao_cv(X_tr, y_tr, X_te, y_te, cv=5)
 
 
 # ============================================================================
@@ -582,7 +728,7 @@ def test_regressao_multipla_bate_com_r2_do_script_de_aula_publicidade():
     X, y = df_limpo[cols_x], df_limpo[col_y]
     X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
     modelo, _, _ = core.treinar_modelo_regressao_multipla(X_tr, y_tr)
-    _, r2, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
+    _, r2, _, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
 
     assert r2 == pytest.approx(0.8649, abs=1e-3)
 
@@ -596,7 +742,7 @@ def test_melhor_subconjunto_multipla_descarta_jornal_no_dataset_publicidade():
     candidatas = ["TV", "Radio", "Jornal"]
     col_y = "Vendas"
 
-    cols_escolhidas, _, r2, _, _ = core.selecionar_melhor_subconjunto_multipla(
+    cols_escolhidas, _, r2, _, _, _ = core.selecionar_melhor_subconjunto_multipla(
         df, candidatas, col_y, test_size=0.3, random_state=0
     )
 
@@ -653,7 +799,7 @@ def test_diagnostico_de_suposicoes_no_fluxo_completo_publicidade():
     X, y = df_limpo[cols_x], df_limpo[col_y]
     X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
     modelo, _, _ = core.treinar_modelo_regressao_multipla(X_tr, y_tr)
-    predicoes, _, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
+    predicoes, _, _, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
     residuos = core.diagnosticar_residuos(y_te, predicoes)["residuos"]
 
     estatistica_gq, p_valor_gq = core.testar_homocedasticidade_residuos(residuos, X_te)
@@ -662,3 +808,93 @@ def test_diagnostico_de_suposicoes_no_fluxo_completo_publicidade():
     p_valor_lb, estatistica_dw = core.testar_independencia_residuos(residuos)
     assert 0.0 <= p_valor_lb <= 1.0
     assert 0.0 <= estatistica_dw <= 4.0
+
+
+# ============================================================================
+# 12) Datasets de `aulas/correcoes/` (ingestão v10) + RMSE
+# ============================================================================
+
+def test_regressao_simples_bate_com_r2_da_correcao_finance_market():
+    """`correcao_regsimples.py` treina X='Indice_S&P500' -> y='ETF_Preco'
+    com test_size=0.3, random_state=42. Confere R²/MAE/MSE/RMSE de
+    referência calculados a partir do mesmo dataset."""
+    df = core.carregar_dataset(os.path.join(DATA_DIR, "finance_market.csv"))
+    col_x, col_y = "Indice_S&P500", "ETF_Preco"
+
+    df_limpo, _ = core.validar_dados_para_regressao(df, col_x, col_y, test_size=0.3)
+    X, y = df_limpo[[col_x]], df_limpo[col_y]
+    X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=42)
+    modelo, _, _ = core.treinar_modelo_regressao_simples(X_tr, y_tr)
+    _, r2, mae, mse, rmse = core.avaliar_modelo(modelo, X_te, y_te)
+
+    assert r2 == pytest.approx(0.9987, abs=1e-3)
+    assert mae == pytest.approx(0.4448, abs=1e-2)
+    assert mse == pytest.approx(0.2982, abs=1e-2)
+    assert rmse == pytest.approx(np.sqrt(mse))
+
+
+def test_regressao_simples_e_multipla_batem_com_a_correcao_agro_tech():
+    """`regressao_simples.py`/`regressao_multipla.py` treinam com
+    test_size=0.3, random_state=0: Simples (precipitacao_anual) dá
+    R²≈0.4847, Múltipla (+fertilizante_kg_ha) sobe para R²≈0.8705 --
+    os mesmos números impressos no script de correção."""
+    df = core.carregar_dataset(os.path.join(DATA_DIR, "agro_tech.csv"))
+    col_y = "toneladas_por_hectare"
+
+    df_s, _ = core.validar_dados_para_regressao(df, "precipitacao_anual", col_y, test_size=0.3)
+    X_s, y_s = df_s[["precipitacao_anual"]], df_s[col_y]
+    X_s_tr, X_s_te, y_s_tr, y_s_te = core.dividir_treino_teste(X_s, y_s, test_size=0.3, random_state=0)
+    modelo_s, _, _ = core.treinar_modelo_regressao_simples(X_s_tr, y_s_tr)
+    _, r2_s, mae_s, mse_s, _ = core.avaliar_modelo(modelo_s, X_s_te, y_s_te)
+
+    assert r2_s == pytest.approx(0.4847, abs=1e-3)
+    assert mae_s == pytest.approx(2.3037, abs=1e-2)
+    assert mse_s == pytest.approx(7.3525, abs=1e-2)
+
+    cols_m = ["precipitacao_anual", "fertilizante_kg_ha"]
+    df_m, _ = core.validar_dados_para_regressao_multipla(df, cols_m, col_y, test_size=0.3)
+    X_m, y_m = df_m[cols_m], df_m[col_y]
+    X_m_tr, X_m_te, y_m_tr, y_m_te = core.dividir_treino_teste(X_m, y_m, test_size=0.3, random_state=0)
+    modelo_m, _, _ = core.treinar_modelo_regressao_multipla(X_m_tr, y_m_tr)
+    _, r2_m, mae_m, mse_m, _ = core.avaliar_modelo(modelo_m, X_m_te, y_m_te)
+
+    assert r2_m == pytest.approx(0.8705, abs=1e-3)
+    assert mae_m == pytest.approx(1.1035, abs=1e-2)
+    assert mse_m == pytest.approx(1.8481, abs=1e-2)
+
+
+def test_melhor_subconjunto_multipla_escolhe_precipitacao_e_fertilizante_agro_tech():
+    """As 2 variáveis de maior correlação com o alvo já são
+    precipitacao_anual + fertilizante_kg_ha -- a busca de melhor
+    subconjunto deve convergir para a mesma combinação do script de aula."""
+    df = core.carregar_dataset(os.path.join(DATA_DIR, "agro_tech.csv"))
+    candidatas = [
+        "precipitacao_anual", "temp_media", "fertilizante_kg_ha",
+        "horas_sol_dia", "ph_solo", "altitude_metros", "umidade_relativa",
+    ]
+    col_y = "toneladas_por_hectare"
+
+    cols_escolhidas, _, r2, _, _, _ = core.selecionar_melhor_subconjunto_multipla(
+        df, candidatas, col_y, test_size=0.3, random_state=0
+    )
+
+    assert {"precipitacao_anual", "fertilizante_kg_ha"} <= set(cols_escolhidas)
+    assert r2 >= 0.8705 - 1e-3
+
+
+def test_regressao_multipla_no_dataset_plano_saude_reproduz_mau_ajuste():
+    """`correcao_teste_suposicao.py` treina com TODAS as colunas (incluindo
+    as dummies de região) e conclui que o modelo não é bom -- confere que
+    `data/base_plano_saude_preparada.csv` reproduz um R² baixo (≈0.18),
+    consistente com a conclusão do script do professor."""
+    df = core.carregar_dataset(os.path.join(DATA_DIR, "base_plano_saude_preparada.csv"))
+    col_y = "gastos_plano"
+    cols_x = [c for c in df.columns if c != col_y]
+
+    df_limpo, _ = core.validar_dados_para_regressao_multipla(df, cols_x, col_y, test_size=0.3)
+    X, y = df_limpo[cols_x], df_limpo[col_y]
+    X_tr, X_te, y_tr, y_te = core.dividir_treino_teste(X, y, test_size=0.3, random_state=0)
+    modelo, _, _ = core.treinar_modelo_regressao_multipla(X_tr, y_tr)
+    _, r2, _, _, _ = core.avaliar_modelo(modelo, X_te, y_te)
+
+    assert r2 == pytest.approx(0.1795, abs=1e-2)

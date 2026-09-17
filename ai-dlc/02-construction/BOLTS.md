@@ -494,8 +494,287 @@
 
 ---
 
+---
+
+> **v10 (Ingestão de `aulas/correcoes/`: RMSE + 3 datasets novos +
+> organização de `data/`):** decisões de Inception em
+> `ai-dlc/01-inception/INCEPTION.md`.
+
+## Bolt 44 — Organizar `data/`: mover datasets novos, remover duplicados de `aulas/`
+
+- **Objetivo:** `data/` vira a única fonte de verdade para datasets —
+  mover `finance_market.csv`, `agro_tech.csv` e
+  `base_plano_saude_preparada.csv` de `aulas/correcoes/.../programas/` para
+  `data/`; remover de `aulas/` (raiz) os duplicados já redundantes
+  (`base_salarios.csv`, `USA_Housing.csv`, `publicidade.csv` — idênticos a
+  `data/`; `50_Startups.csv` — superado pela versão sem dummies já em
+  `data/` desde a v7).
+- **Entregável:** `data/` com 3 arquivos novos; `aulas/` sem CSVs
+  duplicados; scripts `.py` de `aulas/correcoes/` continuam intactos.
+- **Checkpoint:** `git status` confirma os arquivos como movidos/removidos
+  (reversível via git); nenhum CSV sobra fora de `data/`.
+- **Status:** feito
+
+## Bolt 45 — RMSE em `core.py`, `app.py` e leaderboard
+
+- **Objetivo:** `avaliar_modelo()` passa a devolver RMSE além de R²/MAE/MSE;
+  aba Avaliação e leaderboard da Comparação mostram a métrica nova.
+- **Entregável:** `core.py`, `app.py` atualizados.
+- **Checkpoint:** `pytest` cobre que RMSE == `sqrt(MSE)` nos casos já
+  existentes; app renderiza sem erro nas abas afetadas.
+- **Status:** feito
+
+## Bolt 46 — Integrar `finance_market.csv`, `agro_tech.csv` e `base_plano_saude_preparada.csv` ao app
+
+- **Objetivo:** 3 entradas novas em `DATASETS` (`app.py`), com `y_padrao` e
+  descrição (incluindo a nota de `random_state=42` do `finance_market.csv`
+  e o aviso de "mau ajuste" do dataset de plano de saúde).
+- **Entregável:** `app.py` atualizado.
+- **Checkpoint:** os 3 datasets aparecem no seletor e treinam sem erro nos
+  modos Simples, Múltipla e Polinomial (quando aplicável).
+- **Status:** feito
+
+## Bolt 47 — Testes automatizados dos 3 datasets novos
+
+- **Objetivo:** cobrir com `pytest` os R²/MAE/MSE de referência calculados
+  manualmente para os 3 datasets, igual ao padrão dos Bolts 32/39.
+- **Entregável:** casos novos em `tests/test_core.py`.
+- **Checkpoint:** `pytest` passa.
+- **Status:** feito
+
+## Bolt 48 — Documentação de fechamento da v10
+
+- **Objetivo:** atualizar `ai-dlc/aulas-log.md` (arquivos novos + remoções
+  de `aulas/`), `OPERATIONS.md` (changelog v10) e marcar os bolts 44-48
+  como `feito` aqui.
+- **Entregável:** `ai-dlc/aulas-log.md`, `OPERATIONS.md`, `BOLTS.md`.
+- **Checkpoint:** `pytest` passa; app testado no navegador.
+- **Status:** feito
+
+---
+
+---
+
+> **v11 (Aba de Revisão da Prova, Inception abreviada -- prazo: prova em
+> 2026-08-27):** decisão em `ai-dlc/01-inception/INCEPTION.md`.
+
+## Bolt 49 — Aba "🎓 Revisão da Prova"
+
+- **Objetivo:** nova aba estática, primeira da lista nos dois Tipos de
+  Tarefa, com scripts de "cola" (estilo do professor) + código real de
+  `core.py` (via `inspect.getsource`) + tabela de valores de referência dos
+  datasets de aula, cobrindo Simples, Múltipla, Polinomial, Diagnóstico de
+  Resíduos e Logística.
+- **Entregável:** `app.py` -- nova aba.
+- **Checkpoint:** `pytest` passa; app abre sem traceback nos dois Tipos de
+  Tarefa (`streamlit.testing.v1.AppTest`); testado no navegador.
+- **Status:** feito
+
+## Bolt 50 — `escolher_grau_polinomial_cv()` em `core.py` (Gap 1, Inception v12)
+
+- **Objetivo:** reproduzir o método real de aula (Aula6:
+  `exemplo_regr_polinomial.py`, `correcao_polinomial_p1/p2.py`) de escolher
+  o grau do polinômio via `GridSearchCV` (Pipeline `PolynomialFeatures` +
+  `LinearRegression`, `scoring='neg_mean_squared_error'`, `cv=5`, graus 1-6),
+  em vez de só o slider manual já existente.
+- **Entregável:** `escolher_grau_polinomial_cv()` em `core.py` -- devolve
+  grau escolhido, pipeline já treinado e tabela (grau -> neg_MSE médio).
+  Valida `n_linhas >= cv`, levanta `DadosInvalidosError` amigável se não.
+- **Checkpoint:** `pytest` passa.
+- **Status:** feito
+
+## Bolt 51 — Testes automatizados de `escolher_grau_polinomial_cv`
+
+- **Objetivo:** cobrir o caso feliz (dados de y=x² devem escolher grau ≠ 1),
+  o encaixe do pipeline devolvido nas funções genéricas (`avaliar_modelo`) e
+  o caso de erro (poucas linhas para o `cv` pedido).
+- **Entregável:** 3 casos novos em `tests/test_core.py`.
+- **Checkpoint:** `pytest` passa (65 casos, antes eram 62).
+- **Status:** feito
+
+## Bolt 52 — UI: opção "Automático (GridSearchCV)" no modo Polinomial
+
+- **Objetivo:** decisão do Lucas na v12 foi "adicionar como opção extra"
+  (não substituir o slider manual). Novo radio "4b. Como escolher o grau?"
+  (Manual/Automático) na sidebar, só no modo Polinomial; no modo automático,
+  o slider de grau some e o grau é decidido por
+  `escolher_grau_polinomial_cv()` depois do split treino/teste.
+- **Entregável:** `app.py` -- radio novo, ramificação no bloco de treino
+  (~linha 813-826), e na aba Treinamento uma caixa `st.info` com o grau
+  escolhido + tabela dos scores por grau + `ver_codigo()` da função nova.
+- **Checkpoint:** `pytest` passa (65 casos); `streamlit.testing.v1.AppTest`
+  confirma que trocar para Polinomial -> Automático não gera exceção, mostra
+  a caixa "Grau escolhido automaticamente" e a tabela de scores; modo Manual
+  testado de volta sem regressão (slider "4c. Grau do polinômio" continua lá).
+- **Status:** feito
+
+## Bolt 53 — `treinar_regularizacao_cv()` em `core.py` (Inception v13, item 6b)
+
+- **Objetivo:** comparar Múltipla sem regularização com Ridge, Lasso e
+  ElasticNet, reproduzindo o roteiro exato dos scripts de aula
+  (`exemplo_regularizacao.py`, `correcao_Hitters.py`, Aula7): X escalonado
+  com `StandardScaler`, hiperparâmetros escolhidos por `GridSearchCV`
+  (`alpha` para Ridge/Lasso, `alpha`+`l1_ratio` para ElasticNet), **sem**
+  `train_test_split` -- cada modelo avaliado por `cross_val_score`/
+  `GridSearchCV` (`cv=10`, `neg_mean_squared_error`) no dataset inteiro,
+  decisão validada com o Lucas.
+- **Entregável:** `treinar_regularizacao_cv()` em `core.py` -- devolve um
+  dicionário com os 4 modelos (nome -> modelo/coeficientes/score_cv/
+  hiperparâmetros), valida `n_linhas >= cv`.
+- **Checkpoint:** `pytest` passa.
+- **Status:** feito
+
+## Bolt 54 — Testes automatizados de `treinar_regularizacao_cv`
+
+- **Objetivo:** cobrir a estrutura do resultado (4 modelos, na ordem certa,
+  hiperparâmetros esperados por modelo), a lição pedagógica central (Ridge
+  reduz a magnitude dos coeficientes em relação à OLS quando há
+  colinearidade real) e o caso de erro (poucas linhas para o `cv` pedido).
+  Novo fixture `df_mortalidade_infantil` (colinearidade real
+  `Saneamento_pct`/`Agua_Potavel_pct`, r≈0.906 -- substitui o `diabetes.csv`
+  do script, evitando o escalonamento não-padrão daquele dataset).
+- **Entregável:** 3 casos novos em `tests/test_core.py`.
+- **Checkpoint:** `pytest` passa (68 casos, antes eram 65).
+- **Status:** feito
+
+## Bolt 55 — UI: toggle "Regularizar?" no modo Múltipla
+
+- **Objetivo:** decisões do Lucas na v13 -- toggle **dentro** do modo
+  Múltipla (não um "Tipo de Regressão" à parte), mostrando os 3 modelos
+  regularizados **comparados** (não um de cada vez). Puramente aditivo: não
+  toca nas abas Avaliação/Previsão/Diagnóstico/Comparação, que continuam
+  usando a Múltipla "padrão" com o split treino/teste de sempre.
+- **Entregável:** `app.py` -- radio "4b. Regularizar?" na sidebar (só no
+  modo Múltipla); na aba Treinamento, seção nova "🪢 Regularização" com
+  tabela (score CV + hiperparâmetros por modelo) e gráfico de coeficientes
+  (`Sem regularização` x `Ridge` x `Lasso` x `ElasticNet`), gated pelo
+  toggle.
+- **Checkpoint:** `pytest` passa (68 casos); `streamlit.testing.v1.AppTest`
+  confirma que ativar o toggle no dataset "👶 Mortalidade Infantil &
+  Desenvolvimento" (X = `Saneamento_pct`+`Agua_Potavel_pct`+`PIB_per_capita`)
+  não gera exceção, mostra a tabela e o gráfico; conferido manualmente que
+  Ridge/ElasticNet redistribuem peso entre as 2 variáveis colineares em vez
+  de uma dominar a outra.
+- **Status:** feito
+
+## Bolt 56 — Revisão pós-checkpoint: split treino/teste em vez de CV pura
+
+- **Objetivo:** o Lucas testou o Bolt 55 e notou que a comparação (CV pura
+  no dataset inteiro) não dava pra confrontar de forma justa com a Múltipla
+  oficial (split treino/teste). Reescrever `treinar_regularizacao_cv()` para
+  receber `X_treinamento`/`y_treinamento`/`X_teste`/`y_teste`: `GridSearchCV`
+  passa a rodar só dentro do treino (mesmo padrão do Gap 1/Polinomial),
+  escalonamento ajustado só no treino (sem vazamento), e os 4 modelos são
+  avaliados no mesmo teste com `avaliar_modelo()` (R²/MAE/MSE/RMSE) --
+  comparável diretamente com a Múltipla oficial.
+- **Entregável:** `core.py` -- assinatura nova; testes atualizados +
+  1 caso novo (`test_treinar_regularizacao_cv_sem_regularizacao_bate_com_multipla_sem_escalonar`)
+  confirmando que "Sem regularização" bate com a Múltipla oficial.
+- **Checkpoint:** `pytest` passa (69 casos).
+- **Status:** feito
+
+## Bolt 57 — UI: métricas de Regularização também na aba Avaliação
+
+- **Objetivo:** decisão do Lucas -- mostrar R²/MAE/MSE/RMSE dos 4 modelos
+  lado a lado com a Múltipla oficial, não só coeficientes na Treinamento.
+- **Entregável:** `app.py` -- `resultados_regularizacao` calculado uma
+  única vez (bloco de CÁLCULOS, não em cada aba); aba Treinamento mantém só
+  hiperparâmetros + gráfico de coeficientes; aba Avaliação ganha tabela de
+  métricas (melhor R² em negrito) + mensagem indicando se algum regularizado
+  superou a Múltipla sem regularização.
+- **Checkpoint:** `pytest` passa; `AppTest` confirma que a linha "Sem
+  regularização" bate com os números do topo da aba Avaliação.
+- **Status:** feito
+
+## Bolt 58 — UI: Ridge/Lasso/ElasticNet no leaderboard da Comparação
+
+- **Objetivo:** decisão do Lucas -- Regularização também no leaderboard,
+  **independente do toggle da sidebar** (mesmo padrão de Simples/Múltipla/
+  Polinomial, que já aparecem lá sempre). Usa todas as colunas candidatas
+  (a penalidade já seleciona variável, ao contrário da Múltipla que precisa
+  do melhor subconjunto).
+- **Entregável:** `app.py` -- 3 linhas novas no leaderboard; paleta de
+  cores do gráfico ampliada de 3 para 6 cores (paleta "deep" do seaborn).
+- **Checkpoint:** `AppTest` confirma que o leaderboard mostra Ridge/Lasso/
+  ElasticNet mesmo com o toggle "4b. Regularizar?" em "Nenhuma" -- no
+  dataset de Mortalidade Infantil, Ridge venceu com R²=0.7010 (vs. 0.6973
+  da Múltipla), sem exceção.
+- **Status:** feito
+
+## Bolt 59 — Integrar dataset `comissao.xlsx` (Aula6) ao app
+
+- **Objetivo:** o Lucas perguntou se havia bases de aula fora do app; esta
+  (`comissao.xlsx`, usada em `exemplo_polinomial.py`) era a única candidata
+  de baixo esforço -- 1 variável, 50 linhas, mesmo padrão `GridSearchCV` já
+  implementado no Gap 1. Integrar como novo dataset.
+- **Entregável:** convertido para `data/comissao.csv` (segue o padrão CSV
+  dos outros datasets, `.xlsx` não é lido pelo app); entrada nova em
+  `DATASETS` (`app.py`); `.xlsx` removido de `aulas/` após integrar (mesma
+  lógica do Bolt 44 -- `data/` é a única fonte de verdade).
+- **Checkpoint:** `pytest` passa (70 casos, 1 novo confirmando grau=2 e
+  R²≈1.0 via `escolher_grau_polinomial_cv`); `AppTest` confirma que o
+  dataset aparece no seletor, o modo Simples reproduz a equação com
+  intercepto negativo do script (~-675, script usa -626, diferença por
+  causa do split treino/teste do app vs. fit na base inteira do script), e
+  o modo Polinomial automático converge para grau 2.
+- **Status:** feito
+
+## Bolt 60 — Rótulo corrigido: gabarito da prova T1, não correção da AC1
+
+- **Objetivo:** o Lucas apontou que `exercicio1/2_correcao_AC1.py` (Aula5)
+  não são correção da AC1 dele (que é sobre preparação de dados) -- são o
+  **gabarito da prova prática T1** (sala T1, canal V5), a 1ª avaliação
+  formal do semestre.
+- **Entregável:** arquivos renomeados para `gabarito_prova_T1_exercicio1.py`
+  / `_exercicio2.py`; rótulo corrigido em `aulas-log.md` e `INCEPTION.md`.
+- **Status:** feito
+
+## Bolt 61 — Aba "Revisão da Prova" cresce para "Revisão da Prova Parcial"
+
+- **Objetivo:** a Prova Parcial é cumulativa desde a T1, com peso maior --
+  o Lucas quer uma página de estudo atualizada, com foco em pipeline (é
+  prova prática). Decisões via `AskUserQuestion`: fazer crescer a aba
+  existente (não duplicar) + adicionar seção comparativa dos pipelines.
+- **Entregável:** `app.py` -- seções 6️⃣ (Polinomial automático) e 7️⃣
+  (Regularização) com script de cola + `ver_codigo()`; tabela nova
+  `TABELA_COMPARATIVA_PIPELINES` (6 etapas x 5 algoritmos); checklist geral
+  atualizado (escalonamento, GridSearchCV dentro do treino); 2 linhas novas
+  em `REFERENCIA_DATASETS` (`comissao.csv`, Regularização no dataset de
+  Mortalidade Infantil).
+- **Checkpoint:** `pytest` passa (70 casos, sem mudança de lógica);
+  `AppTest` confirma que a aba renderiza sem erro com as 4 seções novas.
+- **Status:** feito
+
+---
+
 ## Registro de bolts concluídos
 
+- **2026-09-16** — Bolt 60: rótulo corrigido -- gabarito da prova T1, não
+  correção da AC1; arquivos renomeados.
+- **2026-09-16** — Bolt 61: aba "Revisão da Prova" cresce para "Revisão da
+  Prova Parcial" (Polinomial automático, Regularização, comparação de
+  pipelines).
+- **2026-09-16** — Bolt 59: dataset `comissao.xlsx` (Aula6) integrado como
+  `data/comissao.csv` (70 casos de pytest no total).
+- **2026-09-16** — Bolt 56: `treinar_regularizacao_cv()` revisado para usar
+  split treino/teste (em vez de CV pura), comparável com a Múltipla oficial.
+- **2026-09-16** — Bolt 57: métricas de Regularização também na aba
+  Avaliação (destaque pro melhor R²).
+- **2026-09-16** — Bolt 58: Ridge/Lasso/ElasticNet no leaderboard da
+  Comparação (69 casos de pytest no total).
+- **2026-09-16** — Bolt 53: `treinar_regularizacao_cv()` em `core.py`
+  (Ridge/Lasso/ElasticNet via GridSearchCV, CV puro sem split, igual ao
+  método de aula da Aula7).
+- **2026-09-16** — Bolt 54: 3 testes novos para `treinar_regularizacao_cv`
+  (68 casos no total).
+- **2026-09-16** — Bolt 55: toggle "Regularizar?" no modo Múltipla da UI,
+  comparando os 3 modelos regularizados.
+- **2026-09-16** — Bolt 50: `escolher_grau_polinomial_cv()` em `core.py`
+  (GridSearchCV, igual ao método de aula da Aula6).
+- **2026-09-16** — Bolt 51: 3 testes novos para `escolher_grau_polinomial_cv`
+  (65 casos no total).
+- **2026-09-16** — Bolt 52: opção "Automático (GridSearchCV)" no modo
+  Polinomial da UI, ao lado do slider manual já existente.
 - **2026-08-18** — Bolt 1: lógica extraída para `core.py`, `app.py` só cuida
   de UI.
 - **2026-08-18** — Bolt 2: validação de dados com mensagens de erro

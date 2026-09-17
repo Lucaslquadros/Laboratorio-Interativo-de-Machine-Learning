@@ -42,6 +42,7 @@ from core import (
     classificar_tipo_problema,
     diagnosticar_residuos,
     dividir_treino_teste,
+    escolher_grau_polinomial_cv,
     gerar_matriz_correlacao,
     interpretar_correlacao,
     prever_classe_novo_valor,
@@ -55,6 +56,7 @@ from core import (
     treinar_modelo_regressao_multipla,
     treinar_modelo_regressao_polinomial,
     treinar_modelo_regressao_simples,
+    treinar_regularizacao_cv,
     validar_dados_para_classificacao,
     validar_dados_para_regressao,
     validar_dados_para_regressao_multipla,
@@ -103,9 +105,486 @@ def carregar_dataset_upload(nome_arquivo, conteudo_bytes):
 # Utilitários de interface
 # ============================================================================
 
-def ver_codigo(funcao, titulo="Ver o código Python deste passo"):
-    with st.expander(f"🔍 {titulo}"):
+def ver_codigo(funcao, titulo="Ver o código Python deste passo", expanded=False):
+    with st.expander(f"🔍 {titulo}", expanded=expanded):
         st.code(inspect.getsource(funcao), language="python")
+
+
+# ============================================================================
+# Aba "🎓 Revisão da Prova" -- página única de consulta, estática (não
+# depende do dataset escolhido na sidebar). Duas camadas de código:
+#   1) "cola de prova" -- scripts flat, no estilo direto do professor
+#      (aulas/, aulas/correcoes/): pd.read_csv -> X/y -> split -> fit ->
+#      métricas -> previsão, prontos para adaptar rápido numa prova prática.
+#   2) implementação real do app -- as mesmas funções de core.py via
+#      inspect.getsource, para conferir a versão "de produção".
+# ============================================================================
+
+SCRIPT_COLA_SIMPLES = '''import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+# 1. Carregar os dados
+df = pd.read_csv("dataset.csv")
+
+# 2. Ver a matriz de correlação -- escolher X com maior |correlação| com y
+print(df.corr(numeric_only=True))
+
+# 3. Definir X (1 variável) e y
+X = df[["coluna_x"]]
+y = df["coluna_y"]
+
+# 4. Dividir treino (70%) e teste (30%)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+# 5. Treinar o modelo
+modelo = LinearRegression()
+modelo.fit(X_train, y_train)
+
+b0 = modelo.intercept_
+b1 = modelo.coef_[0]
+print(f"Equação: y = {b0:.4f} + {b1:.4f} * X")
+
+# 5b. Cálculo "na mão" de b0/b1 (bate com o modelo acima)
+x_arr = X_train["coluna_x"].values
+y_arr = y_train.values
+media_x, media_y = x_arr.mean(), y_arr.mean()
+b1_manual = np.sum((x_arr - media_x) * (y_arr - media_y)) / np.sum((x_arr - media_x) ** 2)
+b0_manual = media_y - b1_manual * media_x
+
+# 6. Prever no conjunto de teste e avaliar
+y_pred = modelo.predict(X_test)
+r2 = r2_score(y_test, y_pred)
+mae = mean_absolute_error(y_test, y_pred)
+mse = mean_squared_error(y_test, y_pred)
+rmse = np.sqrt(mse)
+print(f"R2={r2:.4f}  MAE={mae:.4f}  MSE={mse:.4f}  RMSE={rmse:.4f}")
+
+# 7. Prever um novo valor
+novo = pd.DataFrame({"coluna_x": [valor_novo]})
+print("Previsão:", modelo.predict(novo)[0])
+'''
+
+SCRIPT_COLA_MULTIPLA = '''import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+import numpy as np
+
+df = pd.read_csv("dataset.csv")
+print(df.corr(numeric_only=True))
+
+# X com 2+ colunas (as de maior correlação com y); y é sempre 1 coluna
+features = ["coluna_x1", "coluna_x2"]
+X = df[features]
+y = df["coluna_y"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+modelo = LinearRegression()
+modelo.fit(X_train, y_train)
+
+intercepto = modelo.intercept_
+coeficientes = modelo.coef_  # 1 por coluna de X, na mesma ordem de `features`
+print(f"Intercepto: {intercepto:.4f}")
+print(f"Coeficientes: {dict(zip(features, coeficientes))}")
+
+y_pred = modelo.predict(X_test)
+r2 = r2_score(y_test, y_pred)
+mae = mean_absolute_error(y_test, y_pred)
+mse = mean_squared_error(y_test, y_pred)
+rmse = np.sqrt(mse)
+print(f"R2={r2:.4f}  MAE={mae:.4f}  MSE={mse:.4f}  RMSE={rmse:.4f}")
+
+novo = pd.DataFrame({"coluna_x1": [valor1], "coluna_x2": [valor2]})
+print("Previsão:", modelo.predict(novo)[0])
+'''
+
+SCRIPT_COLA_POLINOMIAL = '''import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+df = pd.read_csv("dataset.csv")
+X = df[["coluna_x"]]  # Polinomial usa só 1 variável X, igual à Simples
+y = df["coluna_y"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+grau = 2  # grau 1 == Regressão Simples; graus maiores = curvas mais flexíveis
+modelo = Pipeline([
+    ("polinomio", PolynomialFeatures(degree=grau, include_bias=False)),
+    ("regressao_linear", LinearRegression()),
+])
+modelo.fit(X_train, y_train)
+
+intercepto = modelo.named_steps["regressao_linear"].intercept_
+coeficientes = modelo.named_steps["regressao_linear"].coef_  # X^1, X^2, ..., X^grau
+print(f"Intercepto: {intercepto:.4f}  Coeficientes: {coeficientes}")
+
+y_pred = modelo.predict(X_test)
+r2 = r2_score(y_test, y_pred)
+mae = mean_absolute_error(y_test, y_pred)
+mse = mean_squared_error(y_test, y_pred)
+print(f"R2={r2:.4f}  MAE={mae:.4f}  MSE={mse:.4f}")
+
+# `modelo.predict()` já aplica a transformação polinomial internamente --
+# previsão funciona igual à Simples, sem precisar expandir X na mão.
+novo = pd.DataFrame({"coluna_x": [valor_novo]})
+print("Previsão:", modelo.predict(novo)[0])
+'''
+
+SCRIPT_COLA_DIAGNOSTICO = '''import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import statsmodels.stats.api as sms
+from statsmodels.stats import diagnostic as diag
+
+# resíduo = valor real - valor previsto (no conjunto de TESTE)
+residuos = y_test.values - y_pred
+
+# 1. LINEARIDADE -- inspecionar visualmente (scatter X vs y, ou pairplot)
+sns.scatterplot(x=X_test.iloc[:, 0], y=y_test); plt.show()
+
+# 2. MÉDIA DOS RESÍDUOS -- deve ser ~0 (sem viés sistemático)
+print("Média dos resíduos:", np.mean(residuos))
+
+# 3. HOMOCEDASTICIDADE -- variância dos resíduos deve ser constante
+sns.scatterplot(x=y_pred, y=residuos); plt.axhline(0, color="red"); plt.show()
+# Teste de Goldfeld-Quandt: H0 = homocedástico. p > 0.05 -> não rejeita H0.
+estatistica_gq, p_valor_gq, _ = sms.het_goldfeldquandt(residuos, X_test)
+print(f"Goldfeld-Quandt: estat={estatistica_gq:.4f}  p-valor={p_valor_gq:.4f}")
+
+# 4. NORMALIDADE DOS RESÍDUOS -- Shapiro-Wilk. H0 = normal. p > 0.05 -> não rejeita H0.
+from scipy import stats
+estatistica_sw, p_valor_sw = stats.shapiro(residuos)
+print(f"Shapiro-Wilk: estat={estatistica_sw:.4f}  p-valor={p_valor_sw:.4f}")
+sns.histplot(residuos, kde=True); plt.show()
+
+# 5. INDEPENDÊNCIA DOS RESÍDUOS (ausência de autocorrelação)
+# Ljung-Box: H0 = sem autocorrelação em nenhum lag. p > 0.05 em todos -> não rejeita H0.
+lb = diag.acorr_ljungbox(residuos, lags=min(40, len(residuos) - 1), return_df=True)
+print("Menor p-valor (Ljung-Box):", lb["lb_pvalue"].min())
+# Durbin-Watson: ~2 = sem autocorrelação; <1.5 positiva; >2.5 negativa.
+dw = sms.durbin_watson(residuos)
+print(f"Durbin-Watson: {dw:.4f}")
+
+# 6. AUSÊNCIA DE COLINEARIDADE (só importa na Múltipla) -- heatmap entre as X
+sns.heatmap(X_train.corr(), annot=True, cmap="coolwarm"); plt.show()
+'''
+
+SCRIPT_COLA_POLINOMIAL_AUTOMATICO = '''import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
+
+df = pd.read_csv("dataset.csv")
+X = df[["coluna_x"]]  # Polinomial usa só 1 variável X, igual à Simples
+y = df["coluna_y"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+# Em vez de escolher o grau na mão, testa 1..6 por validação cruzada (cv=5)
+# e escolhe o de menor MSE médio -- método usado nos scripts de aula (Aula6).
+pipeline = Pipeline([
+    ("polinomio", PolynomialFeatures(include_bias=False)),
+    ("regressao_linear", LinearRegression()),
+])
+grid = GridSearchCV(
+    pipeline, {"polinomio__degree": [1, 2, 3, 4, 5, 6]},
+    scoring="neg_mean_squared_error", cv=5,
+)
+grid.fit(X_train, y_train)  # o CV roda só dentro do treino
+
+print("Melhor grau:", grid.best_params_["polinomio__degree"])
+modelo = grid.best_estimator_  # já treinado com o melhor grau, pronto p/ usar
+
+y_pred = modelo.predict(X_test)
+print(f"R2={r2_score(y_test, y_pred):.4f}")
+
+# modelo.predict() já aplica a expansão polinomial internamente
+novo = pd.DataFrame({"coluna_x": [valor_novo]})
+print("Previsão:", modelo.predict(novo)[0])
+'''
+
+SCRIPT_COLA_REGULARIZACAO = '''import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+df = pd.read_csv("dataset.csv")
+# Use TODAS as variáveis candidatas -- a própria penalidade seleciona/encolhe
+# as menos úteis; não precisa de busca de melhor subconjunto como na Múltipla.
+features = ["coluna_x1", "coluna_x2", "coluna_x3"]
+X = df[features]
+y = df["coluna_y"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+# CUIDADO: Ridge/Lasso/ElasticNet são sensíveis à ESCALA de cada variável
+# (a penalidade incide sobre o tamanho do coeficiente) -- ao contrário da
+# OLS pura, aqui escalonar é obrigatório. Ajuste o scaler só no treino!
+scaler = StandardScaler().fit(X_train)
+X_train_esc = scaler.transform(X_train)
+X_test_esc = scaler.transform(X_test)
+
+alphas = {"alpha": [0.001, 0.01, 0.1, 1, 10, 100]}
+
+ridge = GridSearchCV(Ridge(), alphas, scoring="neg_mean_squared_error", cv=10)
+ridge.fit(X_train_esc, y_train)
+
+lasso = GridSearchCV(Lasso(), alphas, scoring="neg_mean_squared_error", cv=10)
+lasso.fit(X_train_esc, y_train)
+
+elastic = GridSearchCV(
+    ElasticNet(), {**alphas, "l1_ratio": [0.1, 0.5, 0.9, 1]},
+    scoring="neg_mean_squared_error", cv=10,
+)
+elastic.fit(X_train_esc, y_train)
+
+for nome, busca in [("Ridge", ridge), ("Lasso", lasso), ("ElasticNet", elastic)]:
+    modelo = busca.best_estimator_
+    y_pred = modelo.predict(X_test_esc)
+    print(f"{nome} (melhores params: {busca.best_params_})")
+    print(f"  R2={r2_score(y_test, y_pred):.4f}  coeficientes={dict(zip(features, modelo.coef_.round(4)))}")
+
+# Ridge encolhe todos os coeficientes em direção a zero, sem zerar nenhum.
+# Lasso PODE zerar coeficientes por completo -- é uma seleção de variável
+# implícita. ElasticNet fica entre os dois, conforme o l1_ratio escolhido.
+'''
+
+SCRIPT_COLA_LOGISTICA = '''import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    confusion_matrix, roc_curve, roc_auc_score,
+)
+
+df = pd.read_csv("dataset.csv")
+# y precisa ter EXATAMENTE 2 categorias (classificação binária)
+X = df[["coluna_x1", "coluna_x2"]]
+y = df["coluna_y_categorica"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0)
+
+modelo = LogisticRegression(max_iter=1000)
+modelo.fit(X_train, y_train)
+
+# coeficientes ficam em escala de log-odds (log da razão de chances)
+print("Intercepto:", modelo.intercept_[0])
+print("Coeficientes (log-odds):", modelo.coef_[0])
+
+y_pred = modelo.predict(X_test)
+classe_positiva = modelo.classes_[-1]
+
+acuracia = accuracy_score(y_test, y_pred)
+precisao = precision_score(y_test, y_pred, pos_label=classe_positiva)
+revocacao = recall_score(y_test, y_pred, pos_label=classe_positiva)
+f1 = f1_score(y_test, y_pred, pos_label=classe_positiva)
+matriz = confusion_matrix(y_test, y_pred, labels=modelo.classes_)
+print(f"Acurácia={acuracia:.4f}  Precisão={precisao:.4f}  Revocação={revocacao:.4f}  F1={f1:.4f}")
+print("Matriz de confusão:\\n", matriz)
+
+# Curva ROC / AUC (usa probabilidade, não a classe prevista)
+probabilidades = modelo.predict_proba(X_test)[:, -1]
+y_test_binario = (y_test == classe_positiva).astype(int)
+taxa_fp, taxa_vp, _ = roc_curve(y_test_binario, probabilidades)
+auc = roc_auc_score(y_test_binario, probabilidades)
+print("AUC:", auc)
+
+# Previsão de um novo caso
+novo = pd.DataFrame({"coluna_x1": [valor1], "coluna_x2": [valor2]})
+print("Classe prevista:", modelo.predict(novo)[0])
+print("Probabilidade da classe positiva:", modelo.predict_proba(novo)[0][-1])
+'''
+
+REFERENCIA_DATASETS = pd.DataFrame(
+    [
+        {"Dataset": "base_salarios.csv", "Config": "y=Salary, Simples", "Referência": "R² ≈ 0.8943"},
+        {"Dataset": "USA_Housing.csv", "Config": "X=Avg. Area Income, Simples", "Referência": "R² ≈ 0.4247"},
+        {"Dataset": "distancia_consumo.csv", "Config": "Simples, todas as 10 linhas", "Referência": "y=0.5716+0.0663X, R²=0.8980, MSE=0.2995"},
+        {"Dataset": "50_Startups.csv", "Config": "X=R&D Spend+Marketing Spend, test_size=0.3, rs=0", "Referência": "R² ≈ 0.9431"},
+        {"Dataset": "publicidade.csv", "Config": "X=TV+Rádio+Jornal (e melhor subconjunto TV+Rádio)", "Referência": "R² ≈ 0.8649 / 0.8657"},
+        {"Dataset": "agro_tech.csv", "Config": "Simples (precipitação) / Múltipla (+fertilizante)", "Referência": "R² ≈ 0.4847 / 0.8705"},
+        {"Dataset": "finance_market.csv", "Config": "Simples, test_size=0.3, rs=42", "Referência": "R² ≈ 0.9987, RMSE ≈ 0.55"},
+        {"Dataset": "saude_desenvolvimento.csv", "Config": "Múltipla (4 vars) vs. melhor Simples", "Referência": "R² ≈ 0.71 vs. 0.47"},
+        {"Dataset": "mortalidade_infantil_desenvolvimento.csv", "Config": "Múltipla vs. melhor Simples", "Referência": "R² ≈ 0.70 vs. 0.69"},
+        {"Dataset": "base_plano_saude_preparada.csv", "Config": "Múltipla, todas as colunas", "Referência": "R² ≈ 0.18 -- mau ajuste (suposições violadas)"},
+        {"Dataset": "diagnostico_cancer_mama.csv", "Config": "Regressão Logística", "Referência": "Acurácia entre 90% e 98%"},
+        {"Dataset": "comissao.csv", "Config": "Simples (grau 1) vs. Polinomial grau 2", "Referência": "Simples prevê comissão negativa (não faz sentido); grau 2 dá R² ≈ 1.0"},
+        {"Dataset": "mortalidade_infantil_desenvolvimento.csv", "Config": "Múltipla (4 vars) vs. Ridge/Lasso/ElasticNet", "Referência": "R² 0.6961 (sem regularização) → 0.7010 (Ridge); Lasso zera Gasto_Saude_pct_PIB"},
+    ]
+)
+
+TABELA_COMPARATIVA_PIPELINES = pd.DataFrame(
+    [
+        {"Etapa": "Nº de variáveis X", "Simples": "1", "Múltipla": "2+", "Polinomial": "1 (expandida em potências)", "Logística": "1+", "Regularização": "2+ (usa todas, sem busca de subconjunto)"},
+        {"Etapa": "Escalonamento (StandardScaler)", "Simples": "não precisa", "Múltipla": "não precisa", "Polinomial": "não precisa", "Logística": "não precisa", "Regularização": "**obrigatório** -- penalidade depende da escala"},
+        {"Etapa": "Hiperparâmetro via GridSearchCV", "Simples": "não tem", "Múltipla": "não tem", "Polinomial": "grau (só no modo automático)", "Logística": "não tem (neste app)", "Regularização": "alpha (Ridge/Lasso) + l1_ratio (ElasticNet)"},
+        {"Etapa": "Classe do scikit-learn", "Simples": "LinearRegression", "Múltipla": "LinearRegression", "Polinomial": "Pipeline(PolynomialFeatures, LinearRegression)", "Logística": "LogisticRegression", "Regularização": "Ridge / Lasso / ElasticNet"},
+        {"Etapa": "Métrica de avaliação (teste)", "Simples": "R², MAE, MSE, RMSE", "Múltipla": "R², MAE, MSE, RMSE", "Polinomial": "R², MAE, MSE, RMSE", "Logística": "Acurácia, Precisão, Revocação, F1, AUC", "Regularização": "R², MAE, MSE, RMSE"},
+        {"Etapa": "Suposições da regressão (6)", "Simples": "checar", "Múltipla": "checar", "Polinomial": "checar", "Logística": "não se aplica (é classificação)", "Regularização": "mesmas da Múltipla (é Múltipla + penalidade)"},
+        {"Etapa": "Pegadinha comum", "Simples": "confundir correlação com causalidade", "Múltipla": "esquecer que `coef_` agora é um vetor, não um escalar", "Polinomial": "achar que grau alto é sempre melhor (overfitting)", "Logística": "achar que é regressão -- é classificação!", "Regularização": "usar `alpha` sem escalonar X antes"},
+    ]
+)
+
+
+def renderizar_revisao_da_prova():
+    st.header("🎓 Revisão da Prova Parcial -- Pipeline completo em Python")
+    st.info(
+        "Página estática de consulta (não depende do dataset escolhido na "
+        "barra lateral) -- **cumulativa**: cresce a cada novo tópico coberto "
+        "pelo app, então sempre reflete tudo o que já foi ensinado até aqui. "
+        "A prova T1 (a primeira do semestre) cobriu até Regressão Logística; "
+        "a Parcial soma **Regressão Polinomial com grau automático** e "
+        "**Regularização (Ridge/Lasso/ElasticNet)**, os 2 tópicos mais "
+        "recentes. Cada bloco tem: (1) um **script pronto**, no mesmo estilo "
+        "direto dos exercícios do professor, para adaptar rápido numa prova "
+        "prática, e (2) a **implementação real do app** (`core.py`), caso "
+        "precise conferir detalhes."
+    )
+
+    with st.expander("✅ Checklist geral do pipeline (qualquer algoritmo)", expanded=True):
+        st.markdown(
+            """
+1. **Carregar** o CSV (`pd.read_csv`) e olhar `df.head()`/`df.info()`.
+2. **Correlação** (`df.corr(numeric_only=True)`) -- escolher X pela maior
+   correlação em módulo com y (ou usar todas, na Múltipla).
+3. **Definir X e y**: `X = df[[...]]` (sempre uma lista, mesmo com 1
+   coluna), `y = df["..."]`.
+4. **Dividir treino/teste**: `train_test_split(X, y, test_size=0.3,
+   random_state=0)` -- 70/30 é o padrão usado em aula.
+4b. **(Só Regularização) Escalonar X**: `StandardScaler().fit(X_train)` e
+   aplicar em treino e teste -- Ridge/Lasso/ElasticNet são sensíveis à
+   escala; os outros algoritmos não precisam disso.
+5. **Treinar**: `modelo.fit(X_train, y_train)`. Se tiver hiperparâmetro pra
+   escolher (grau do Polinomial, `alpha` da Regularização), envolva o
+   `.fit()` num `GridSearchCV` rodando **só dentro do treino**.
+6. **Avaliar no conjunto de TESTE** (nunca no treino):
+   - Regressão: R², MAE, MSE, RMSE.
+   - Classificação: acurácia, precisão, revocação, F1, matriz de confusão,
+     ROC/AUC.
+7. **(Regressão) Checar as suposições**, se pedido: linearidade, média dos
+   resíduos ≈ 0, homocedasticidade (Goldfeld-Quandt), normalidade
+   (Shapiro-Wilk), independência (Ljung-Box/Durbin-Watson), colinearidade.
+8. **Prever um novo valor**: monte um `pd.DataFrame` com as mesmas colunas
+   de X e chame `modelo.predict(...)` (escalone o valor novo também, se o
+   modelo for Regularização).
+            """
+        )
+
+    with st.expander("🧭 Passo 0 -- Como classificar o problema antes de escolher o modelo", expanded=True):
+        st.markdown(
+            """
+```
+Aprendizado de Máquina
+├── Supervisionado (tem atributo-alvo/y conhecido)
+│   ├── Regressão → y CONTÍNUO (Regressão Linear Simples/Múltipla/Polinomial)
+│   └── Classificação → y CATEGÓRICO
+│       ├── Binária (2 classes) -- ex: Regressão Logística
+│       └── Multiclasse (3+ classes)
+└── Não supervisionado (sem y) → Associação / Clusterização (fora do escopo do app)
+```
+**Pegadinha clássica do professor:** Regressão Logística faz
+**Classificação**, apesar do nome ter "Regressão".
+
+**Vocabulário duplicado (mesma coisa, nomes diferentes):** X = "atributos
+previsores" = "variáveis independentes/preditoras". y = "atributo-alvo/
+target" = "variável dependente/resposta".
+            """
+        )
+        ver_codigo(classificar_tipo_problema, "Ver o código: classificar_tipo_problema()")
+
+    st.subheader("1️⃣ Regressão Linear Simples")
+    st.code(SCRIPT_COLA_SIMPLES, language="python")
+    ver_codigo(carregar_dataset, "core.py: carregar_dataset()")
+    ver_codigo(treinar_modelo_regressao_simples, "core.py: treinar_modelo_regressao_simples()")
+    ver_codigo(calcular_coeficientes_na_mao, "core.py: calcular_coeficientes_na_mao() -- cálculo manual")
+    ver_codigo(avaliar_modelo, "core.py: avaliar_modelo() -- R²/MAE/MSE/RMSE")
+    ver_codigo(prever_novo_valor, "core.py: prever_novo_valor()")
+
+    st.subheader("2️⃣ Regressão Linear Múltipla")
+    st.code(SCRIPT_COLA_MULTIPLA, language="python")
+    ver_codigo(treinar_modelo_regressao_multipla, "core.py: treinar_modelo_regressao_multipla()")
+    ver_codigo(prever_novo_valor_multiplo, "core.py: prever_novo_valor_multiplo()")
+    ver_codigo(selecionar_melhor_subconjunto_multipla, "core.py: selecionar_melhor_subconjunto_multipla() -- busca do melhor R²")
+
+    st.subheader("3️⃣ Regressão Polinomial")
+    st.code(SCRIPT_COLA_POLINOMIAL, language="python")
+    ver_codigo(treinar_modelo_regressao_polinomial, "core.py: treinar_modelo_regressao_polinomial()")
+
+    st.subheader("4️⃣ Diagnóstico de Resíduos -- as 6 suposições da Regressão Linear")
+    st.code(SCRIPT_COLA_DIAGNOSTICO, language="python")
+    with st.expander("📋 Regra de decisão de cada teste (H0, limiar)", expanded=True):
+        st.markdown(
+            """
+| Suposição | Teste | H0 (hipótese nula) | Regra |
+|---|---|---|---|
+| Média dos resíduos | -- | -- | deve ser ≈ 0 |
+| Homocedasticidade | Goldfeld-Quandt | variância constante | p > 0.05 → não rejeita H0 (ok) |
+| Normalidade | Shapiro-Wilk | resíduos normais | p > 0.05 → não rejeita H0 (ok) |
+| Independência | Ljung-Box | sem autocorrelação | p > 0.05 em todos os lags → não rejeita H0 (ok) |
+| Independência | Durbin-Watson | -- | entre 1.5 e 2.5 → sem autocorrelação relevante |
+| Colinearidade | heatmap de correlação entre X | -- | |correlação| alta entre X's → colinearidade |
+            """
+        )
+    ver_codigo(diagnosticar_residuos, "core.py: diagnosticar_residuos()")
+    ver_codigo(testar_normalidade_residuos, "core.py: testar_normalidade_residuos() -- Shapiro-Wilk")
+    ver_codigo(testar_homocedasticidade_residuos, "core.py: testar_homocedasticidade_residuos() -- Goldfeld-Quandt")
+    ver_codigo(testar_independencia_residuos, "core.py: testar_independencia_residuos() -- Ljung-Box + Durbin-Watson")
+
+    st.subheader("5️⃣ Regressão Logística (Classificação binária)")
+    st.code(SCRIPT_COLA_LOGISTICA, language="python")
+    ver_codigo(validar_dados_para_classificacao, "core.py: validar_dados_para_classificacao()")
+    ver_codigo(treinar_modelo_regressao_logistica, "core.py: treinar_modelo_regressao_logistica()")
+    ver_codigo(avaliar_modelo_classificacao, "core.py: avaliar_modelo_classificacao()")
+    ver_codigo(prever_classe_novo_valor, "core.py: prever_classe_novo_valor()")
+
+    st.subheader("6️⃣ Regressão Polinomial -- grau automático (GridSearchCV)")
+    st.caption(
+        "Novo desde a v12 (Aula6): em vez de escolher o grau no slider, "
+        "deixa o `GridSearchCV` testar os graus 1-6 por validação cruzada "
+        "(dentro do treino) e escolher o de menor erro médio -- método usado "
+        "nos scripts de aula, não uma invenção do app."
+    )
+    st.code(SCRIPT_COLA_POLINOMIAL_AUTOMATICO, language="python")
+    ver_codigo(escolher_grau_polinomial_cv, "core.py: escolher_grau_polinomial_cv()")
+
+    st.subheader("7️⃣ Regularização -- Ridge / Lasso / ElasticNet")
+    st.caption(
+        "Novo desde a v13 (Aula7): é a Múltipla com uma penalidade sobre o "
+        "tamanho dos coeficientes -- ajuda quando há colinearidade real "
+        "entre as variáveis X (ex.: `Saneamento_pct` e `Agua_Potavel_pct` no "
+        "dataset de Mortalidade Infantil, correlacionados em 0.906). Sem "
+        "colinearidade, os 3 convergem pra quase-OLS (não é bug, é o "
+        "`GridSearchCV` dizendo que menos regularização já é o melhor)."
+    )
+    st.code(SCRIPT_COLA_REGULARIZACAO, language="python")
+    ver_codigo(treinar_regularizacao_cv, "core.py: treinar_regularizacao_cv()")
+
+    st.subheader("🔀 Comparação lado a lado dos pipelines")
+    st.caption(
+        "O que muda e o que se repete entre os algoritmos -- útil pra não "
+        "confundir na hora da prova qual passo é específico de qual modelo."
+    )
+    st.dataframe(TABELA_COMPARATIVA_PIPELINES, use_container_width=True, hide_index=True)
+
+    st.subheader("📎 Gabarito -- valores de referência dos datasets de aula")
+    st.caption(
+        "Se você usar um destes datasets na prova (ou um parecido), confira "
+        "se o resultado bate aproximadamente com a referência abaixo."
+    )
+    st.dataframe(REFERENCIA_DATASETS, use_container_width=True, hide_index=True)
 
 
 DATASETS = {
@@ -191,6 +670,64 @@ DATASETS = {
             "correlação fraca com Vendas (R² ≈ 0.8649 com as 3 variáveis, "
             "0.8657 com o melhor subconjunto TV+Rádio, test_size=0.3, "
             "random_state=0)."
+        ),
+    },
+    "📈 Mercado Financeiro (correção)": {
+        "arquivo": "finance_market.csv",
+        "y_padrao": "ETF_Preco",
+        "descricao": (
+            "Dataset usado em `correcao_regsimples.py`: preço de um ETF "
+            "explicado pelo Índice S&P500 (500 observações, sem NaN). Ajuste "
+            "quase perfeito -- R² ≈ 0.9987, MAE ≈ 0.44, MSE ≈ 0.30, "
+            "RMSE ≈ 0.55 com `test_size=0.3, random_state=42` (o script do "
+            "professor usa essa semente; com o `random_state=0` padrão do "
+            "app o resultado é parecido, mas não idêntico)."
+        ),
+    },
+    "🌾 Produtividade Agrícola (correção)": {
+        "arquivo": "agro_tech.csv",
+        "y_padrao": "toneladas_por_hectare",
+        "descricao": (
+            "Dataset usado em `regressao_simples.py`/`regressao_multipla.py`: "
+            "produtividade agrícola (ton/ha) explicada por clima e insumos "
+            "(450 observações, sem NaN). Bom para comparar Simples vs. "
+            "Múltipla -- Simples com `precipitacao_anual` dá R² ≈ 0.4847, "
+            "Múltipla com `precipitacao_anual` + `fertilizante_kg_ha` "
+            "(as 2 variáveis de maior correlação, escolhidas automaticamente) "
+            "sobe para R² ≈ 0.8705, batendo com o script de aula "
+            "(`test_size=0.3, random_state=0`)."
+        ),
+    },
+    "🏥 Gastos com Plano de Saúde (correção)": {
+        "arquivo": "base_plano_saude_preparada.csv",
+        "y_padrao": "gastos_plano",
+        "descricao": (
+            "Dataset usado em `correcao_teste_suposicao.py`: gastos com "
+            "plano de saúde explicados por idade, IMC, filhos, gênero, "
+            "hábito de fumar e região (já codificada em colunas dummy -- "
+            "2772 observações, sem NaN). **Exemplo intencional de mau "
+            "ajuste**: as correlações com o alvo são fracas (|r| ≤ 0.34) e "
+            "o próprio script do professor conclui que o modelo viola as "
+            "suposições de homocedasticidade e normalidade dos resíduos -- "
+            "bom para testar a aba **Diagnóstico dos Resíduos** num caso "
+            "que realmente falha, ao contrário dos outros datasets."
+        ),
+    },
+    "💰 Comissão x Quantidade Vendida (aula)": {
+        "arquivo": "comissao.csv",
+        "y_padrao": "comissao",
+        "descricao": (
+            "Dataset usado no `exemplo_polinomial.py` (Aula6): 50 observações, "
+            "`quantidade` vendida x `comissao` recebida -- feito sob medida "
+            "para mostrar por que uma curva bate melhor que uma reta. No modo "
+            "**Simples** (grau 1), a equação vira "
+            "`comissão = -626 + 178·quantidade`, prevendo comissão **negativa** "
+            "pra quantidades baixas (não faz sentido). No modo **Polinomial** "
+            "com grau 2 -- manual ou via 'Automático (GridSearchCV)' -- o "
+            "ajuste fica essencialmente perfeito (R² ≈ 1.0, RMSE ≈ 0), porque "
+            "os dados foram construídos como uma parábola exata. Ótimo para "
+            "comparar Simples x Polinomial no leaderboard e ver a diferença "
+            "na prática."
         ),
     },
 }
@@ -334,6 +871,18 @@ else:
             st.sidebar.info("Selecione pelo menos 2 variáveis X para treinar a Regressão Múltipla.")
             st.stop()
         col_x = cols_x[0]  # coluna de referência p/ trechos que ainda mostram só 1 variável
+
+        modo_regularizacao = st.sidebar.radio(
+            "4b. Regularizar?",
+            ["Nenhuma (Múltipla padrão)", "Comparar Ridge / Lasso / ElasticNet"],
+            help="Reproduz o método dos scripts de aula (Aula7): escalona X com "
+            "StandardScaler e compara a Múltipla sem regularização com Ridge, Lasso "
+            "e ElasticNet, cada um com o hiperparâmetro escolhido por validação "
+            "cruzada (GridSearchCV, sem separar treino/teste -- a comparação usa o "
+            "neg_mean_squared_error médio da CV, igual ao script). Não afeta as "
+            "abas Avaliação/Previsão/Comparação, que continuam usando a Múltipla "
+            "'padrão' com o split treino/teste de sempre.",
+        )
     else:
         col_x = st.sidebar.selectbox(
             "4. Variável INDEPENDENTE (X, preditora)",
@@ -343,11 +892,21 @@ else:
         cols_x = [col_x]
 
     if modo_regressao == MODO_POLINOMIAL:
-        grau_polinomial = st.sidebar.slider(
-            "4b. Grau do polinômio", min_value=2, max_value=5, value=2, step=1,
-            help="Grau 1 seria igual à Regressão Simples. Graus mais altos ajustam curvas "
-            "mais flexíveis, mas arriscam overfitting com poucos dados.",
+        modo_grau_polinomial = st.sidebar.radio(
+            "4b. Como escolher o grau?",
+            ["Manual (slider)", "Automático (GridSearchCV, igual à aula)"],
+            help="'Automático' reproduz o método usado nos scripts de aula (Aula6): "
+            "testa cada grau candidato via validação cruzada (GridSearchCV) e escolhe "
+            "o de menor MSE médio, em vez de você escolher o grau na mão.",
         )
+        if modo_grau_polinomial == "Manual (slider)":
+            grau_polinomial = st.sidebar.slider(
+                "4c. Grau do polinômio", min_value=2, max_value=5, value=2, step=1,
+                help="Grau 1 seria igual à Regressão Simples. Graus mais altos ajustam curvas "
+                "mais flexíveis, mas arriscam overfitting com poucos dados.",
+            )
+        else:
+            grau_polinomial = None  # escolhido depois do split, via GridSearchCV (precisa de X_treinamento/y_treinamento)
 
 st.sidebar.markdown("---")
 
@@ -416,9 +975,17 @@ try:
         modelo, intercepto, coeficientes = treinar_modelo_regressao_multipla(X_treinamento, y_treinamento)
         beta0_manual, beta1_manual = None, None
     elif modo_regressao == MODO_POLINOMIAL:
-        modelo, intercepto, coefs_array = treinar_modelo_regressao_polinomial(
-            X_treinamento, y_treinamento, grau_polinomial
-        )
+        tabela_cv_graus = None
+        if modo_grau_polinomial == "Manual (slider)":
+            modelo, intercepto, coefs_array = treinar_modelo_regressao_polinomial(
+                X_treinamento, y_treinamento, grau_polinomial
+            )
+        else:
+            grau_polinomial, modelo, tabela_cv_graus = escolher_grau_polinomial_cv(
+                X_treinamento, y_treinamento
+            )
+            intercepto = modelo.named_steps["regressao_linear"].intercept_
+            coefs_array = modelo.named_steps["regressao_linear"].coef_
         coeficientes = pd.Series(coefs_array, index=[f"{col_x}^{p}" for p in range(1, grau_polinomial + 1)])
         beta0_manual, beta1_manual = None, None
     else:
@@ -437,7 +1004,22 @@ if tarefa == TAREFA_CLASSIFICACAO:
         avaliar_modelo_classificacao(modelo, X_teste, y_teste)
     )
 else:
-    predicoes_modelo, r2, mae, mse = avaliar_modelo(modelo, X_teste, y_teste)
+    predicoes_modelo, r2, mae, mse, rmse = avaliar_modelo(modelo, X_teste, y_teste)
+
+# Regularização (Ridge/Lasso/ElasticNet) -- calculado uma única vez aqui
+# (não em cada aba) porque as abas Treinamento e Avaliação mostram os
+# mesmos resultados sob ângulos diferentes (coeficientes x métricas).
+resultados_regularizacao = None
+erro_regularizacao = None
+if (
+    tarefa == TAREFA_REGRESSAO
+    and modo_regressao == MODO_MULTIPLA
+    and modo_regularizacao == "Comparar Ridge / Lasso / ElasticNet"
+):
+    try:
+        resultados_regularizacao = treinar_regularizacao_cv(X_treinamento, y_treinamento, X_teste, y_teste)
+    except DadosInvalidosError as erro:
+        erro_regularizacao = str(erro)
 
 
 # ============================================================================
@@ -454,8 +1036,9 @@ st.markdown(
 )
 
 if tarefa == TAREFA_CLASSIFICACAO:
-    aba_passo0, aba_teoria, aba_dados, aba_split, aba_treino, aba_avaliacao, aba_previsao = st.tabs(
+    aba_revisao, aba_passo0, aba_teoria, aba_dados, aba_split, aba_treino, aba_avaliacao, aba_previsao = st.tabs(
         [
+            "🎓 Revisão da Prova",
             "🧭 Passo 0",
             "📚 Teoria",
             "📊 Dados & Correlação",
@@ -467,8 +1050,9 @@ if tarefa == TAREFA_CLASSIFICACAO:
     )
     aba_diagnostico = aba_comparacao = None  # não existem no lado Classificação
 else:
-    aba_passo0, aba_teoria, aba_dados, aba_split, aba_treino, aba_avaliacao, aba_diagnostico, aba_previsao, aba_comparacao = st.tabs(
+    aba_revisao, aba_passo0, aba_teoria, aba_dados, aba_split, aba_treino, aba_avaliacao, aba_diagnostico, aba_previsao, aba_comparacao = st.tabs(
         [
+            "🎓 Revisão da Prova",
             "🧭 Passo 0",
             "📚 Teoria",
             "📊 Dados & Correlação",
@@ -480,6 +1064,10 @@ else:
             "🆚 Comparação",
         ]
     )
+
+# ------------------------------------------------------- Revisão da Prova --
+with aba_revisao:
+    renderizar_revisao_da_prova()
 
 # --------------------------------------------------------------- Passo 0 ---
 with aba_passo0:
@@ -950,6 +1538,56 @@ with aba_treino:
         )
 
         ver_codigo(treinar_modelo_regressao_multipla, "Ver o código: treinar com scikit-learn")
+
+        if modo_regularizacao == "Comparar Ridge / Lasso / ElasticNet":
+            st.markdown("---")
+            st.subheader("🪢 Regularização: coeficientes (Ridge / Lasso / ElasticNet)")
+            st.markdown(
+                "Reproduzindo o método dos scripts de aula (Aula7), mas no "
+                "**mesmo split treino/teste** do painel lateral (para comparar "
+                "de forma justa com a Múltipla acima -- ver métricas na aba "
+                "Avaliação): X é escalonado com `StandardScaler` (ajustado só "
+                "no treino) e `alpha` (Ridge/Lasso) / `alpha`+`l1_ratio` "
+                "(ElasticNet) são escolhidos por `GridSearchCV` (validação "
+                "cruzada **dentro do treino**, 10 dobras)."
+            )
+            if erro_regularizacao is not None:
+                st.warning(f"⚠️ Não foi possível comparar os modelos regularizados: {erro_regularizacao}")
+            else:
+                tabela_hiperparametros = pd.DataFrame(
+                    {
+                        "modelo": nome,
+                        "hiperparâmetro(s)": ", ".join(
+                            f"{chave}={valor}" for chave, valor in info["hiperparametros"].items()
+                        )
+                        or "--",
+                    }
+                    for nome, info in resultados_regularizacao.items()
+                )
+                st.dataframe(tabela_hiperparametros, use_container_width=True, hide_index=True)
+
+                fig_regularizacao, ax_regularizacao = plt.subplots(figsize=(8, 4.5))
+                for nome, info in resultados_regularizacao.items():
+                    ax_regularizacao.plot(
+                        info["coeficientes"].index, info["coeficientes"].values, marker="o", label=nome
+                    )
+                ax_regularizacao.axhline(0, color="red", linestyle="solid", linewidth=1)
+                ax_regularizacao.set_ylabel("coeficiente (X escalonado)")
+                ax_regularizacao.tick_params(axis="x", rotation=30)
+                ax_regularizacao.legend()
+                ax_regularizacao.set_title("Coeficientes: sem regularização x Ridge x Lasso x ElasticNet")
+                st.pyplot(fig_regularizacao, use_container_width=False)
+
+                st.caption(
+                    "Ridge encolhe todos os coeficientes em direção a zero sem "
+                    "zerar nenhum; Lasso pode zerar completamente uma variável "
+                    "(seleção de variável implícita); ElasticNet fica entre os "
+                    "dois, conforme `l1_ratio`. Métricas de desempenho (R²/MAE/"
+                    "MSE/RMSE) dos 4 modelos, lado a lado com a Múltipla oficial: "
+                    "aba **Avaliação**."
+                )
+
+                ver_codigo(treinar_regularizacao_cv, "Ver o código: treinar com scikit-learn")
     elif modo_regressao == MODO_POLINOMIAL:
         st.markdown(
             f"`PolynomialFeatures(degree={grau_polinomial})` expande **{col_x}** em "
@@ -958,6 +1596,22 @@ with aba_treino:
             "continua sendo mínimos quadrados, só que sobre as colunas "
             "expandidas em vez de X sozinho."
         )
+
+        if tabela_cv_graus is not None:
+            st.info(
+                f"🔍 **Grau escolhido automaticamente: {grau_polinomial}** -- "
+                "`GridSearchCV` testou os graus abaixo por validação cruzada "
+                "(5 dobras, `neg_mean_squared_error`) e escolheu o de menor erro "
+                "médio, igual ao método usado nos scripts de aula (Aula6)."
+            )
+            tabela_cv_exibicao = tabela_cv_graus.rename("neg_MSE médio (CV)").reset_index()
+            tabela_cv_exibicao.columns = ["grau", "neg_MSE médio (CV)"]
+            st.dataframe(
+                tabela_cv_exibicao.style.format({"neg_MSE médio (CV)": "{:.4f}"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+            ver_codigo(escolher_grau_polinomial_cv, "Ver o código: escolher o grau via GridSearchCV")
 
         st.subheader("Calculado pelo scikit-learn")
         st.metric("Intercepto (β₀)", f"{intercepto:.4f}")
@@ -1067,10 +1721,11 @@ with aba_avaliacao:
         ax_roc.legend()
         st.pyplot(fig_roc, use_container_width=False)
     else:
-        col_a, col_b, col_c = st.columns(3)
+        col_a, col_b, col_c, col_d = st.columns(4)
         col_a.metric("R² (coeficiente de determinação)", f"{r2:.4f}")
         col_b.metric("MAE (erro médio absoluto)", f"{mae:,.2f}")
         col_c.metric("MSE (erro médio quadrático)", f"{mse:,.2f}")
+        col_d.metric("RMSE (raiz do erro quadrático médio)", f"{rmse:,.2f}")
 
         if modo_regressao == MODO_MULTIPLA:
             origem_x = f"das {len(cols_x)} variáveis selecionadas ({', '.join(cols_x)})"
@@ -1081,7 +1736,7 @@ with aba_avaliacao:
             f"**{col_y}** a partir de {origem_x}, no conjunto de teste."
         )
 
-        ver_codigo(avaliar_modelo, "Ver o código: R², MAE e MSE")
+        ver_codigo(avaliar_modelo, "Ver o código: R², MAE, MSE e RMSE")
 
         st.markdown("---")
 
@@ -1107,6 +1762,58 @@ with aba_avaliacao:
             ax_disp.set_title("Previsto vs. Real")
             ax_disp.legend()
             st.pyplot(fig_disp, use_container_width=False)
+
+            if modo_regularizacao == "Comparar Ridge / Lasso / ElasticNet":
+                st.markdown("---")
+                st.subheader("🪢 Regularização: métricas lado a lado com a Múltipla")
+                st.caption(
+                    "Mesmo split treino/teste da Múltipla acima -- a linha "
+                    "'Sem regularização' deve bater com R²/MAE/MSE/RMSE mostrados "
+                    "no topo desta aba (escalonar X não muda essas métricas numa "
+                    "OLS pura; só Ridge/Lasso/ElasticNet, que penalizam o tamanho "
+                    "do coeficiente, são sensíveis à escala)."
+                )
+                if erro_regularizacao is not None:
+                    st.warning(f"⚠️ Não foi possível comparar os modelos regularizados: {erro_regularizacao}")
+                else:
+                    tabela_metricas_regularizacao = pd.DataFrame(
+                        {
+                            "modelo": nome,
+                            "R²": info["r2"],
+                            "MAE": info["mae"],
+                            "MSE": info["mse"],
+                            "RMSE": info["rmse"],
+                        }
+                        for nome, info in resultados_regularizacao.items()
+                    )
+                    melhor_regularizacao = tabela_metricas_regularizacao.loc[
+                        tabela_metricas_regularizacao["R²"].idxmax(), "modelo"
+                    ]
+                    st.dataframe(
+                        tabela_metricas_regularizacao.style.format(
+                            {"R²": "{:.4f}", "MAE": "{:,.2f}", "MSE": "{:,.2f}", "RMSE": "{:,.2f}"}
+                        ).apply(
+                            lambda linha: [
+                                "font-weight: bold" if linha["modelo"] == melhor_regularizacao else ""
+                                for _ in linha
+                            ],
+                            axis=1,
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    if melhor_regularizacao == "Sem regularização":
+                        st.info(
+                            "Neste dataset e split, nenhuma das 3 regularizações "
+                            "melhorou o R² de teste em relação à Múltipla sem "
+                            "regularização -- regularizar nem sempre ajuda, "
+                            "principalmente com poucas variáveis/pouca colinearidade."
+                        )
+                    else:
+                        st.success(
+                            f"Neste dataset e split, **{melhor_regularizacao}** teve o "
+                            f"maior R² de teste, superando a Múltipla sem regularização."
+                        )
         elif modo_regressao == MODO_POLINOMIAL:
             st.subheader(f"Dispersão dos dados + curva ajustada (grau {grau_polinomial})")
             st.caption(
@@ -1408,13 +2115,16 @@ if tarefa == TAREFA_REGRESSAO:
         st.header("🆚 Leaderboard — todos os modelos de regressão")
         st.markdown(
             "Treina automaticamente **todos os modelos de regressão** possíveis "
-            "neste dataset (Simples, Múltipla e Polinomial), usando a mesma "
-            "divisão treino/teste do painel lateral, e ranqueia por R² -- sem "
-            "afetar as outras abas, que continuam mostrando só o modo ativo "
-            "escolhido no painel lateral. Na Múltipla, testa **todas as "
-            "combinações possíveis** de variáveis candidatas e usa a de maior "
-            "R² -- por isso o número de variáveis em \"Detalhes\" pode ser "
-            "menor que o total de colunas disponíveis."
+            "neste dataset (Simples, Múltipla, Polinomial, Ridge, Lasso e "
+            "ElasticNet), usando a mesma divisão treino/teste do painel lateral, "
+            "e ranqueia por R² -- sem afetar as outras abas, que continuam "
+            "mostrando só o modo ativo escolhido no painel lateral. Na Múltipla, "
+            "testa **todas as combinações possíveis** de variáveis candidatas e "
+            "usa a de maior R² -- por isso o número de variáveis em \"Detalhes\" "
+            "pode ser menor que o total de colunas disponíveis. Já Ridge/Lasso/"
+            "ElasticNet usam **todas** as colunas candidatas de uma vez -- a "
+            "própria penalidade já reduz/zera as variáveis menos úteis, sem "
+            "precisar de uma busca de subconjunto."
         )
 
         linhas_leaderboard = []
@@ -1429,9 +2139,9 @@ if tarefa == TAREFA_REGRESSAO:
                 X_s, y_s, test_size=test_size, random_state=int(random_state)
             )
             modelo_s, _, _ = treinar_modelo_regressao_simples(X_s_tr, y_s_tr)
-            _, r2_s, mae_s, mse_s = avaliar_modelo(modelo_s, X_s_te, y_s_te)
+            _, r2_s, mae_s, mse_s, rmse_s = avaliar_modelo(modelo_s, X_s_te, y_s_te)
             linhas_leaderboard.append(
-                {"Modelo": "Simples", "Detalhes": col_x_simples, "R²": r2_s, "MAE": mae_s, "MSE": mse_s}
+                {"Modelo": "Simples", "Detalhes": col_x_simples, "R²": r2_s, "MAE": mae_s, "MSE": mse_s, "RMSE": rmse_s}
             )
         except DadosInvalidosError as erro:
             erros_leaderboard.append(f"Simples: {erro}")
@@ -1442,7 +2152,7 @@ if tarefa == TAREFA_REGRESSAO:
         try:
             if len(opcoes_x_ordenadas) < 2:
                 raise DadosInvalidosError("este dataset só tem 1 coluna numérica candidata a X.")
-            cols_m, modelo_m, r2_m, mae_m, mse_m = selecionar_melhor_subconjunto_multipla(
+            cols_m, modelo_m, r2_m, mae_m, mse_m, rmse_m = selecionar_melhor_subconjunto_multipla(
                 df, opcoes_x_ordenadas, col_y, test_size, random_state=int(random_state)
             )
             linhas_leaderboard.append(
@@ -1452,6 +2162,7 @@ if tarefa == TAREFA_REGRESSAO:
                     "R²": r2_m,
                     "MAE": mae_m,
                     "MSE": mse_m,
+                    "RMSE": rmse_m,
                 }
             )
         except DadosInvalidosError as erro:
@@ -1467,7 +2178,7 @@ if tarefa == TAREFA_REGRESSAO:
                 X_p, y_p, test_size=test_size, random_state=int(random_state)
             )
             modelo_p, _, _ = treinar_modelo_regressao_polinomial(X_p_tr, y_p_tr, grau_leaderboard)
-            _, r2_p, mae_p, mse_p = avaliar_modelo(modelo_p, X_p_te, y_p_te)
+            _, r2_p, mae_p, mse_p, rmse_p = avaliar_modelo(modelo_p, X_p_te, y_p_te)
             linhas_leaderboard.append(
                 {
                     "Modelo": f"Polinomial (grau {grau_leaderboard})",
@@ -1475,10 +2186,43 @@ if tarefa == TAREFA_REGRESSAO:
                     "R²": r2_p,
                     "MAE": mae_p,
                     "MSE": mse_p,
+                    "RMSE": rmse_p,
                 }
             )
         except DadosInvalidosError as erro:
             erros_leaderboard.append(f"Polinomial: {erro}")
+
+        # Regularização -- Ridge/Lasso/ElasticNet com TODAS as colunas
+        # candidatas a X (ao contrário da Múltipla acima, a penalidade já
+        # faz a seleção de variável sozinha -- não precisa de busca de
+        # melhor subconjunto); alpha/l1_ratio escolhidos por GridSearchCV
+        # dentro do treino, avaliados no mesmo teste (Inception v13).
+        try:
+            if len(opcoes_x_ordenadas) < 2:
+                raise DadosInvalidosError("este dataset só tem 1 coluna numérica candidata a X.")
+            df_r, _ = validar_dados_para_regressao_multipla(df, opcoes_x_ordenadas, col_y, test_size)
+            X_r, y_r = df_r[opcoes_x_ordenadas], df_r[col_y]
+            X_r_tr, X_r_te, y_r_tr, y_r_te = dividir_treino_teste(
+                X_r, y_r, test_size=test_size, random_state=int(random_state)
+            )
+            resultados_reg_leaderboard = treinar_regularizacao_cv(X_r_tr, y_r_tr, X_r_te, y_r_te)
+            for nome_modelo in ("Ridge", "Lasso", "ElasticNet"):
+                info_modelo = resultados_reg_leaderboard[nome_modelo]
+                hiperparametros_fmt = ", ".join(
+                    f"{chave}={valor}" for chave, valor in info_modelo["hiperparametros"].items()
+                )
+                linhas_leaderboard.append(
+                    {
+                        "Modelo": nome_modelo,
+                        "Detalhes": f"{len(opcoes_x_ordenadas)} variáveis ({hiperparametros_fmt})",
+                        "R²": info_modelo["r2"],
+                        "MAE": info_modelo["mae"],
+                        "MSE": info_modelo["mse"],
+                        "RMSE": info_modelo["rmse"],
+                    }
+                )
+        except DadosInvalidosError as erro:
+            erros_leaderboard.append(f"Regularização (Ridge/Lasso/ElasticNet): {erro}")
 
         if linhas_leaderboard:
             tabela_leaderboard = (
@@ -1486,14 +2230,16 @@ if tarefa == TAREFA_REGRESSAO:
             )
             tabela_leaderboard.insert(0, "Posição", range(1, len(tabela_leaderboard) + 1))
             st.dataframe(
-                tabela_leaderboard.style.format({"R²": "{:.4f}", "MAE": "{:,.2f}", "MSE": "{:,.2f}"}),
+                tabela_leaderboard.style.format(
+                    {"R²": "{:.4f}", "MAE": "{:,.2f}", "MSE": "{:,.2f}", "RMSE": "{:,.2f}"}
+                ),
                 use_container_width=True,
                 hide_index=True,
             )
 
             fig_leader, ax_leader = plt.subplots(figsize=(6, 1.2 + 0.6 * len(tabela_leaderboard)))
             ordem_grafico = tabela_leaderboard.sort_values("R²")
-            cores = ["#4C72B0", "#DD8452", "#55A868"]
+            cores = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2", "#937860"]
             ax_leader.barh(ordem_grafico["Modelo"], ordem_grafico["R²"], color=cores[: len(ordem_grafico)])
             ax_leader.set_xlabel("R² (quanto maior, melhor)")
             r2_min = min(0.0, float(tabela_leaderboard["R²"].min()))
